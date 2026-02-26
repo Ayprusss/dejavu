@@ -24,7 +24,7 @@ function Navbar({ currentPage = 'shop', onNavigate }) {
         aria-label="Deja Vu home"
         onClick={(event) => handleNavClick(event, 'shop')}
       >
-        DEJA VU
+        DÉJA VU
       </a>
 
       <nav className="nav-links">
