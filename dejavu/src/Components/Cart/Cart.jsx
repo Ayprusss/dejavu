@@ -93,6 +93,7 @@ function Cart({
   const animateAndRemove = (itemId) => {
     if (exitingItemIds.includes(itemId)) return;
 
+    startSubtotalLoading();
     setExitingItemIds((prev) => [...prev, itemId]);
 
     removeTimeoutsRef.current[itemId] = setTimeout(() => {
@@ -117,6 +118,8 @@ function Cart({
     startSubtotalLoading();
     onIncrement(itemId);
   };
+
+  const isControlLocked = isSubtotalLoading;
 
   return (
     <>
@@ -162,6 +165,7 @@ function Cart({
                         type="button"
                         className="cart-item-remove"
                         aria-label={`Remove ${item.name}`}
+                        disabled={isControlLocked}
                         onClick={() => animateAndRemove(item.id)}
                       >
                         <CloseIcon />
@@ -171,11 +175,15 @@ function Cart({
                     <p className="cart-item-meta">Size: {item.size}</p>
                     <p className="cart-item-price">{formatPrice(item.price)}</p>
 
-                    <div className="cart-item-qty" aria-label="Quantity selector">
+                    <div
+                      className={`cart-item-qty ${isControlLocked ? 'is-disabled' : ''}`}
+                      aria-label="Quantity selector"
+                    >
                       <button
                         type="button"
                         onClick={() => handleDecrementClick(item)}
                         aria-label="Decrease quantity"
+                        disabled={isControlLocked}
                       >
                         -
                       </button>
@@ -184,6 +192,7 @@ function Cart({
                         type="button"
                         onClick={() => handleIncrementClick(item.id)}
                         aria-label="Increase quantity"
+                        disabled={isControlLocked}
                       >
                         +
                       </button>
