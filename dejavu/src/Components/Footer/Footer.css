@@ -1,0 +1,45 @@
+.site-footer {
+  position: fixed;
+  right: clamp(1.2rem, 0.8rem + 1.8vw, 2.2rem);
+  bottom: clamp(1.2rem, 0.8rem + 1.8vw, 2.2rem);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: #fff;
+  color: #000;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: clamp(0.18rem, 0.12rem + 0.28vw, 0.3rem);
+}
+
+.footer-link-item {
+  position: relative;
+  display: inline-block;
+  font-size: clamp(0.7rem, 0.62rem + 0.35vw, 0.75rem);
+  color: #000;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.footer-link-item::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 1px;
+  background: #000;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 180ms ease;
+}
+
+.footer-link-item:hover::after,
+.footer-link-item:focus-visible::after {
+  transform: scaleX(1);
+}
