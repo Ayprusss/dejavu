@@ -39,6 +39,23 @@
   vertical-align: super;
 }
 
+.cart-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.72);
+  opacity: 0;
+}
+
+.cart-overlay.is-open {
+  animation: cart-overlay-enter 500ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.cart-overlay.is-closing {
+  animation: cart-overlay-exit 500ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  pointer-events: none;
+}
+
 .cart-dialog {
   position: fixed;
   top: 0;
@@ -288,6 +305,24 @@
   to {
     opacity: 0;
     transform: translateX(100%);
+  }
+}
+
+@keyframes cart-overlay-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cart-overlay-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 

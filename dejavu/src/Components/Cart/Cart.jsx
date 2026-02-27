@@ -134,88 +134,96 @@ function Cart({
       </button>
 
       {isMounted ? (
-        <aside
-          className={`cart-dialog ${isClosing ? 'is-closing' : 'is-open'}`}
-          aria-label="Cart dialog"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="cart-dialog-header">
-            <h2 className="cart-title">Cart</h2>
-            <button type="button" className="cart-close" aria-label="Close cart" onClick={onClose}>
-              <CloseIcon />
-            </button>
-          </div>
+        <>
+          <div
+            className={`cart-overlay ${isClosing ? 'is-closing' : 'is-open'}`}
+            aria-hidden="true"
+            onClick={onClose}
+          />
 
-          <div className="cart-dialog-body">
-            {items.length === 0 ? (
-              <p className="cart-empty">Your cart is currently empty.</p>
-            ) : (
-              items.map((item) => (
-                <article
-                  key={item.id}
-                  className={`cart-item-row ${exitingItemIds.includes(item.id) ? 'is-exiting' : ''}`}
-                >
-                  <img className="cart-item-image" src={item.image} alt={item.name} />
+          <aside
+            className={`cart-dialog ${isClosing ? 'is-closing' : 'is-open'}`}
+            aria-label="Cart dialog"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="cart-dialog-header">
+              <h2 className="cart-title">Cart</h2>
+              <button type="button" className="cart-close" aria-label="Close cart" onClick={onClose}>
+                <CloseIcon />
+              </button>
+            </div>
 
-                  <div className="cart-item-content">
-                    <div className="cart-item-top">
-                      <h3 className="cart-item-name">{item.name}</h3>
-                      <button
-                        type="button"
-                        className="cart-item-remove"
-                        aria-label={`Remove ${item.name}`}
-                        disabled={isControlLocked}
-                        onClick={() => animateAndRemove(item.id)}
-                      >
-                        <CloseIcon />
-                      </button>
-                    </div>
-
-                    <p className="cart-item-meta">Size: {item.size}</p>
-                    <p className="cart-item-price">{formatPrice(item.price)}</p>
-
-                    <div
-                      className={`cart-item-qty ${isControlLocked ? 'is-disabled' : ''}`}
-                      aria-label="Quantity selector"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleDecrementClick(item)}
-                        aria-label="Decrease quantity"
-                        disabled={isControlLocked}
-                      >
-                        -
-                      </button>
-                      <span><b>{item.quantity}</b></span>
-                      <button
-                        type="button"
-                        onClick={() => handleIncrementClick(item.id)}
-                        aria-label="Increase quantity"
-                        disabled={isControlLocked}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-
-          <footer className="cart-dialog-footer">
-            <div className="cart-subtotal-row">
-              <span>Subtotal</span>
-              {isSubtotalLoading ? (
-                <span className="cart-subtotal-loader" aria-label="Updating subtotal" role="status" />
+            <div className="cart-dialog-body">
+              {items.length === 0 ? (
+                <p className="cart-empty">Your cart is currently empty.</p>
               ) : (
-                <span>{formatPrice(subtotal)} USD</span>
+                items.map((item) => (
+                  <article
+                    key={item.id}
+                    className={`cart-item-row ${exitingItemIds.includes(item.id) ? 'is-exiting' : ''}`}
+                  >
+                    <img className="cart-item-image" src={item.image} alt={item.name} />
+
+                    <div className="cart-item-content">
+                      <div className="cart-item-top">
+                        <h3 className="cart-item-name">{item.name}</h3>
+                        <button
+                          type="button"
+                          className="cart-item-remove"
+                          aria-label={`Remove ${item.name}`}
+                          disabled={isControlLocked}
+                          onClick={() => animateAndRemove(item.id)}
+                        >
+                          <CloseIcon />
+                        </button>
+                      </div>
+
+                      <p className="cart-item-meta">Size: {item.size}</p>
+                      <p className="cart-item-price">{formatPrice(item.price)}</p>
+
+                      <div
+                        className={`cart-item-qty ${isControlLocked ? 'is-disabled' : ''}`}
+                        aria-label="Quantity selector"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleDecrementClick(item)}
+                          aria-label="Decrease quantity"
+                          disabled={isControlLocked}
+                        >
+                          -
+                        </button>
+                        <span><b>{item.quantity}</b></span>
+                        <button
+                          type="button"
+                          onClick={() => handleIncrementClick(item.id)}
+                          aria-label="Increase quantity"
+                          disabled={isControlLocked}
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))
               )}
             </div>
-            <button type="button" className="cart-checkout">Check Out</button>
-            <p className="cart-footnote">Shipping, taxes, and discount codes are calculated at checkout</p>
-          </footer>
-        </aside>
+
+            <footer className="cart-dialog-footer">
+              <div className="cart-subtotal-row">
+                <span>Subtotal</span>
+                {isSubtotalLoading ? (
+                  <span className="cart-subtotal-loader" aria-label="Updating subtotal" role="status" />
+                ) : (
+                  <span>{formatPrice(subtotal)} USD</span>
+                )}
+              </div>
+              <button type="button" className="cart-checkout">Check Out</button>
+              <p className="cart-footnote">Shipping, taxes, and discount codes are calculated at checkout</p>
+            </footer>
+          </aside>
+        </>
       ) : null}
     </>
   );
