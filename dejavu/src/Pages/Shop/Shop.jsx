@@ -1,0 +1,67 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import './Shop.css';
+import { PRODUCTS } from '../../data/products';
+
+function Shop() {
+  const [isGridVisible, setIsGridVisible] = useState(false);
+
+  useEffect(() => {
+    const animationFrame = requestAnimationFrame(() => {
+      setIsGridVisible(true);
+    });
+
+    return () => cancelAnimationFrame(animationFrame);
+  }, []);
+
+  return (
+    <section className="shop-page" aria-label="Shop products">
+      <div className="shop-page-inner">
+        <div className={`shop-grid${isGridVisible ? ' shop-grid--visible' : ''}`}>
+          {PRODUCTS.map((item) => {
+            const primaryImage = item.images?.[0];
+            const hoverImage = item.images?.[1];
+
+            return (
+              <article
+                key={item.id}
+                className={`shop-card${hoverImage ? ' shop-card--has-hover' : ''}`}
+              >
+                <Link className="shop-card-link" to={`/products/${item.id}`}>
+                  <div className="shop-card-media">
+                    {primaryImage ? (
+                      <img
+                        className="shop-card-image shop-card-image--primary"
+                        src={primaryImage.src}
+                        alt={primaryImage.alt ?? item.imageAlt}
+                        loading="lazy"
+                      />
+                    ) : null}
+                    {hoverImage ? (
+                      <img
+                        className="shop-card-image shop-card-image--hover"
+                        src={hoverImage.src}
+                        alt={hoverImage.alt ?? `${item.imageAlt} alternate view`}
+                        loading="lazy"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </div>
+
+                  <h2 className="shop-card-name">{item.name}</h2>
+                  {item.priceLabel ? <p className="shop-card-price">{item.priceLabel}</p> : null}
+                  {item.cardStatus ? (
+                    <p className={`shop-card-status ${item.cardStatusTone}`}>{item.cardStatus}</p>
+                  ) : null}
+                </Link>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default Shop;
+
