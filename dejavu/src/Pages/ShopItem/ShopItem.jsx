@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import {
   getProductById,
-  SIZE_GUIDE_ROWS,
   SIZE_GUIDE_UNITS_LABEL,
 } from '../../data/products';
 import './ShopItem.css';
@@ -45,6 +44,7 @@ function ShopItem({ onAddToCart }) {
   const ctaLabel = isSelectedSizeSoldOut ? 'Sold Out' : 'Add To Cart';
   const priceLabel = product.priceLabel ?? '$0.00 USD';
   const sizeGuideColumns = product.sizeGuide?.columns ?? product.sizes?.map((size) => size.label) ?? [];
+  const sizeGuideRows = product.sizeGuide?.measurements ? Object.keys(product.sizeGuide.measurements) : [];
 
   const handlePanelToggle = (panelName) => {
     setOpenPanel((currentPanel) => (currentPanel === panelName ? null : panelName));
@@ -160,17 +160,19 @@ function ShopItem({ onAddToCart }) {
             </summary>
 
             <div className="shop-item-detail-body" aria-hidden={openPanel !== 'description'}>
-              {product.description?.heading ? (
-                <h2 className="shop-item-description-heading">{product.description.heading}</h2>
-              ) : null}
-              {product.description?.paragraphs?.map((paragraph, index) => (
-                <p key={`description-${index}`} className="shop-item-description-copy">
-                  {paragraph}
-                </p>
-              ))}
-              {product.description?.modelNote ? (
-                <p className="shop-item-description-model">{product.description.modelNote}</p>
-              ) : null}
+              <div className="shop-item-detail-inner">
+                {product.description?.heading ? (
+                  <h2 className="shop-item-description-heading">{product.description.heading}</h2>
+                ) : null}
+                {product.description?.paragraphs?.map((paragraph, index) => (
+                  <p key={`description-${index}`} className="shop-item-description-copy">
+                    {paragraph}
+                  </p>
+                ))}
+                {product.description?.modelNote ? (
+                  <p className="shop-item-description-model">{product.description.modelNote}</p>
+                ) : null}
+              </div>
             </div>
           </details>
 
@@ -190,35 +192,37 @@ function ShopItem({ onAddToCart }) {
             </summary>
 
             <div className="shop-item-detail-body" aria-hidden={openPanel !== 'size-guide'}>
-              <table className="shop-item-size-guide-table">
-                <thead>
-                  <tr>
-                    <th aria-hidden="true" />
-                    {sizeGuideColumns.map((column) => (
-                      <th key={`${product.id}-${column}`} scope="col">
-                        {column}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {SIZE_GUIDE_ROWS.map((rowLabel) => (
-                    <tr key={`${product.id}-${rowLabel}`}>
-                      <th scope="row">{rowLabel}</th>
-                      {sizeGuideColumns.map((column, columnIndex) => (
-                        <td key={`${product.id}-${rowLabel}-${column}`}>
-                          {product.sizeGuide?.measurements?.[rowLabel]?.[columnIndex] ?? '--'}
-                        </td>
+              <div className="shop-item-detail-inner">
+                <table className="shop-item-size-guide-table">
+                  <thead>
+                    <tr>
+                      <th aria-hidden="true" />
+                      {sizeGuideColumns.map((column) => (
+                        <th key={`${product.id}-${column}`} scope="col">
+                          {column}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={sizeGuideColumns.length + 1}>{SIZE_GUIDE_UNITS_LABEL}</td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody>
+                    {sizeGuideRows.map((rowLabel) => (
+                      <tr key={`${product.id}-${rowLabel}`}>
+                        <th scope="row">{rowLabel}</th>
+                        {sizeGuideColumns.map((column, columnIndex) => (
+                          <td key={`${product.id}-${rowLabel}-${column}`}>
+                            {product.sizeGuide?.measurements?.[rowLabel]?.[columnIndex] ?? '--'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={sizeGuideColumns.length + 1}>{SIZE_GUIDE_UNITS_LABEL}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </details>
         </article>

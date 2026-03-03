@@ -7,11 +7,39 @@ function Shop() {
   const [isGridVisible, setIsGridVisible] = useState(false);
 
   useEffect(() => {
-    const animationFrame = requestAnimationFrame(() => {
-      setIsGridVisible(true);
-    });
+    const loadImages = async () => {
+      // Get all primary images we need to load
+      const imageUrls = PRODUCTS.filter((item) => item.images?.[0]).map(
+        (item) => item.images[0].src
+      );
 
-    return () => cancelAnimationFrame(animationFrame);
+      if (imageUrls.length === 0) {
+        setIsGridVisible(true);
+        return;
+      }
+
+      try {
+        await Promise.all(
+          imageUrls.map((src) => {
+            return new Promise((resolve, reject) => {
+              const img = new Image();
+              img.src = src;
+              img.onload = resolve;
+              img.onerror = resolve; // Resolve on error too to avoid blocking the whole page
+            });
+          })
+        );
+      } finally {
+        // Double requestAnimationFrame ensures browser has painted layout before transition
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setIsGridVisible(true);
+          });
+        });
+      }
+    };
+
+    loadImages();
   }, []);
 
   return (
