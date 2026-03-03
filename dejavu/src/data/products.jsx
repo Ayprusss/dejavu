@@ -1,12 +1,4 @@
-import arlo1 from '../Pages/Shop/arlo_1.webp';
-import arlo2 from '../Pages/Shop/arlo_2.webp';
-import arlo3 from '../Pages/Shop/arlo_3.webp';
-import arlo4 from '../Pages/Shop/arlo_4.jpg';
-import arlo5 from '../Pages/Shop/arlo_5.jpg';
-import isaac1 from '../Pages/Shop/isaac-1.jpg';
-import isaac2 from '../Pages/Shop/isaac-2.jpg';
-import isaac3 from '../Pages/Shop/isaac-3.jpg';
-import luke1 from '../Pages/Shop/luke_1.jpg';
+
 
 export const SIZE_GUIDE_ROWS = ['Shoulder', 'Sleeve', 'Length', 'Chest'];
 export const SIZE_GUIDE_UNITS_LABEL = 'inch/cm';
@@ -21,9 +13,9 @@ export const PRODUCTS = [
     cardStatusTone: 'is-default',
     imageAlt: 'Model wearing a black leather jacket with a neutral studio backdrop',
     images: [
-      { src: isaac1, alt: 'Weston crinkled leather jacket front view' },
-      { src: isaac2, alt: 'Weston crinkled leather jacket rear view' },
-      { src: isaac3, alt: 'Weston crinkled leather jacket editorial view' },
+      { src: '/images/isaac-1.jpg', alt: 'Weston crinkled leather jacket front view' },
+      { src: '/images/isaac-2.jpg', alt: 'Weston crinkled leather jacket rear view' },
+      { src: '/images/isaac-3.jpg', alt: 'Weston crinkled leather jacket editorial view' },
     ],
     sizes: [
       { label: 'S', stock: 0 },
@@ -58,9 +50,9 @@ export const PRODUCTS = [
     cardStatusTone: 'is-low-stock',
     imageAlt: 'Black tailored jacket product image against a soft gray background',
     images: [
-      { src: arlo1, alt: 'Luca jacket front view' },
-      { src: arlo2, alt: 'Luca jacket rear view' },
-      { src: arlo3, alt: 'Luca jacket detail view' },
+      { src: '/images/arlo_1.webp', alt: 'Luca jacket front view' },
+      { src: '/images/arlo_2.webp', alt: 'Luca jacket rear view' },
+      { src: '/images/arlo_3.webp', alt: 'Luca jacket detail view' },
     ],
     sizes: [
       { label: 'S', stock: 1 },
@@ -94,9 +86,9 @@ export const PRODUCTS = [
     cardStatusTone: '',
     imageAlt: 'Dark canvas jacket product image centered on a pale gray card',
     images: [
-      { src: isaac3, alt: 'Beau jacket front view' },
-      { src: arlo4, alt: 'Beau jacket side detail' },
-      { src: arlo5, alt: 'Beau jacket texture detail' },
+      { src: '/images/isaac-3.jpg', alt: 'Beau jacket front view' },
+      { src: '/images/arlo_4.jpg', alt: 'Beau jacket side detail' },
+      { src: '/images/arlo_5.jpg', alt: 'Beau jacket texture detail' },
     ],
     sizes: [
       { label: 'S', stock: 0 },
@@ -128,9 +120,9 @@ export const PRODUCTS = [
     cardStatusTone: 'is-default',
     imageAlt: 'Blue drizzler jacket product image against a soft neutral background',
     images: [
-      { src: isaac1, alt: 'Leon jacket front view' },
-      { src: isaac2, alt: 'Leon jacket rear view' },
-      { src: luke1, alt: 'Leon jacket editorial view' },
+      { src: '/images/isaac-1.jpg', alt: 'Leon jacket front view' },
+      { src: '/images/isaac-2.jpg', alt: 'Leon jacket rear view' },
+      { src: '/images/luke_1.jpg', alt: 'Leon jacket editorial view' },
     ],
     sizes: [
       { label: 'S', stock: 0 },
@@ -162,9 +154,9 @@ export const PRODUCTS = [
     cardStatusTone: '',
     imageAlt: 'Dark olive jacket product image with clean editorial framing',
     images: [
-      { src: isaac2, alt: 'Ari jacket side A view' },
-      { src: isaac1, alt: 'Ari jacket side B view' },
-      { src: luke1, alt: 'Ari jacket editorial detail' },
+      { src: '/images/isaac-2.jpg', alt: 'Ari jacket side A view' },
+      { src: '/images/isaac-1.jpg', alt: 'Ari jacket side B view' },
+      { src: '/images/luke_1.jpg', alt: 'Ari jacket editorial detail' },
     ],
     sizes: [
       { label: 'S', stock: 2 },
@@ -196,9 +188,9 @@ export const PRODUCTS = [
     cardStatusTone: '',
     imageAlt: 'Raw indigo overshirt product image on a light studio backdrop',
     images: [
-      { src: isaac3, alt: 'Nico overshirt front view' },
-      { src: arlo4, alt: 'Nico overshirt back view' },
-      { src: arlo5, alt: 'Nico overshirt close detail' },
+      { src: '/images/isaac-3.jpg', alt: 'Nico overshirt front view' },
+      { src: '/images/arlo_4.jpg', alt: 'Nico overshirt back view' },
+      { src: '/images/arlo_5.jpg', alt: 'Nico overshirt close detail' },
     ],
     sizes: [
       { label: 'S', stock: 1 },
