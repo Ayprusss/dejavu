@@ -49,7 +49,7 @@ function Navbar({
             (page === 'stockist' && isStockistExpanded);
 
           return (
-            <Fragment key={label}>
+            <div key={label} className="nav-item-container">
               <a
                 href="#"
                 className={`nav-link-item${isActive ? ' is-active' : ''}`}
@@ -60,24 +60,28 @@ function Navbar({
                 {label}
               </a>
 
-              {page === 'stockist' &&
-              isStockistExpanded &&
-              stockistLinks.length > 0 ? (
-                <div id="stockist-links" className="stockist-links" aria-label="Stockist links">
-                  {stockistLinks.map(({ label: stockistLabel, href }) => (
-                    <a
-                      key={stockistLabel}
-                      className="stockist-link-item"
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {stockistLabel}
-                    </a>
-                  ))}
+              {page === 'stockist' && stockistLinks.length > 0 ? (
+                <div
+                  id="stockist-links"
+                  className={`stockist-wrapper${isStockistExpanded ? ' is-expanded' : ''}`}
+                  aria-hidden={!isStockistExpanded}
+                >
+                  <div className="stockist-links" aria-label="Stockist links">
+                    {stockistLinks.map(({ label: stockistLabel, href }) => (
+                      <a
+                        key={stockistLabel}
+                        className="stockist-link-item"
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {stockistLabel}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               ) : null}
-            </Fragment>
+            </div>
           );
         })}
       </nav>

@@ -32,6 +32,12 @@
   gap: clamp(0.2rem, 0.1rem + 0.4vw, 0.35rem);
 }
 
+.nav-item-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .nav-link-item {
   position: relative;
   display: inline-block;
@@ -69,13 +75,31 @@
   transform: scaleX(1);
 }
 
+.stockist-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  margin: 0;
+  transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 300ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stockist-wrapper.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: clamp(0.1rem, 0.06rem + 0.2vw, 0.2rem);
+}
+
 .stockist-links {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: clamp(0.15rem, 0.08rem + 0.3vw, 0.28rem);
-  margin-top: clamp(0.1rem, 0.06rem + 0.2vw, 0.2rem);
-  margin-bottom: clamp(0.18rem, 0.12rem + 0.25vw, 0.3rem);
+  margin: 0;
+  padding-bottom: clamp(0.18rem, 0.12rem + 0.25vw, 0.3rem);
 }
 
 .stockist-link-item {
@@ -138,7 +162,7 @@
   line-height: 1.2;
 }
 
-.account-input-label + .account-input {
+.account-input-label+.account-input {
   margin-top: 0.52rem;
 }
 
@@ -161,7 +185,7 @@
   appearance: none;
 }
 
-.account-input + .account-input-label {
+.account-input+.account-input-label {
   margin-top: 0.4rem;
 }
 
