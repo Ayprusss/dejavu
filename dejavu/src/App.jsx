@@ -26,19 +26,19 @@ const INITIAL_CART_ITEMS = [
 const STOCKIST_LINKS = [
   {
     label: 'Addition Adelaide',
-    href: 'https://www.instagram.com/additionadelaide/',
+    href: 'https://www.instagram.com/additionadelaide?igsh=OGRlZGR1dmd0cXVw',
   },
   {
     label: 'Adelaide',
-    href: 'https://www.instagram.com/adelaidejapan/',
+    href: 'https://www.instagram.com/selectshop_adelaide?igsh=c3d3dWx0OWh5eHp3',
   },
   {
     label: 'Barnes New York Ginza',
-    href: 'https://www.instagram.com/barnes_new_york_official/',
+    href: 'https://www.instagram.com/barneysnewyork_ginza?igsh=MWFkZzB3d202bmVoZA%3D%3D',
   },
   {
     label: 'International Gallery Beams',
-    href: 'https://www.instagram.com/international_gallery_beams/',
+    href: 'https://www.instagram.com/international_gallery_beams?igsh=ejhydjN2eWQ5ZDk1',
   },
   {
     label: 'Loftman',
@@ -46,31 +46,31 @@ const STOCKIST_LINKS = [
   },
   {
     label: 'Mars',
-    href: 'https://www.instagram.com/mars_japan/',
+    href: 'https://www.instagram.com/latest_on_mars/',
   },
   {
     label: 'United Arrows & Sons',
-    href: 'https://www.instagram.com/unitedarrowsandsons/',
+    href: 'https://www.instagram.com/unitedarrowsandsons?igsh=ZGlydWJxMDc5aThu',
   },
   {
     label: '00',
-    href: 'https://www.instagram.com/00_store/',
+    href: 'https://www.instagram.com/00_zerozero_?igsh=c21pejVnN2diZmZs',
   },
   {
     label: 'Why are you here',
-    href: 'https://www.instagram.com/whyareyouhere__/',
+    href: 'https://www.instagram.com/whyareyouhere_osaka?igsh=MTk0bnIwYjhramRn',
   },
   {
-    label: 'Ref',
-    href: 'https://www.instagram.com/ref_tokyo/',
+    label: 'Ref.',
+    href: 'https://www.instagram.com/ref.store_?igsh=cGVuampudmE1eTBt',
   },
   {
     label: 'Komune, New York',
-    href: 'https://www.instagram.com/komune_ny/',
+    href: 'https://www.instagram.com/komune.space/',
   },
   {
     label: 'Addicted, Seoul',
-    href: 'https://www.instagram.com/addicted_seoul/',
+    href: 'https://www.instagram.com/addictedseoul/',
   },
 ];
 
