@@ -1,0 +1,72 @@
+.terms-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(255, 255, 255, 0.9);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.terms-dialog {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 2rem;
+    background: transparent;
+}
+
+.terms-close {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.terms-close svg {
+    width: 24px;
+    height: 24px;
+    stroke: #000;
+    stroke-width: 0.7;
+    fill: none;
+}
+
+.terms-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 1rem;
+    font-family: 'Times New Roman', Times, serif;
+    /* Using a serif font based on the screenshot */
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: #000;
+    text-align: left;
+}
+
+.terms-heading {
+    font-size: 0.75rem;
+    font-weight: normal;
+    margin: 1rem 0 0 0;
+    text-transform: uppercase;
+}
+
+.terms-heading:first-of-type {
+    margin-top: 0;
+}
+
+.terms-text {
+    margin: 0;
+}
