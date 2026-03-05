@@ -149,24 +149,25 @@
 
 @media (max-width: 900px) {
   .shop-page {
-    --shop-right-reserve: clamp(3.4rem, 6vw, 4.8rem);
-    padding-bottom: clamp(5rem, 9vh, 6.5rem);
+    /* Reset layout for mobile top header */
+    width: 100%;
+    margin-left: 0;
+    padding: clamp(6rem, 12vh, 8rem) clamp(1rem, 2vw, 1.5rem) clamp(6rem, 9vh, 7rem) clamp(1rem, 2vw, 1.5rem);
   }
 
   .shop-page-inner {
-    width: min(100%, 30rem);
-    margin: 0 auto;
+    width: 100%;
+    margin: 0;
   }
 
   .shop-grid {
-    grid-template-columns: 1fr;
-    gap: clamp(0.6rem, 2.2vw, 0.85rem);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(0.5rem, 1.5vw, 1rem) clamp(0.5rem, 1.5vw, 1rem);
   }
 
   .shop-card {
-    width: min(100%, 22rem);
+    width: 100%;
     max-width: 100%;
-    justify-self: start;
+    justify-self: stretch;
   }
 }
-
