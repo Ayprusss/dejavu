@@ -1,26 +1,23 @@
 .contact-page {
-  --contact-page-left-pad: clamp(0.8rem, 0.6rem + 0.8vw, 1.4rem);
-  --contact-page-right-pad: clamp(1rem, 1.2vw, 1.8rem);
+  --contact-page-pad: clamp(1rem, 1.2vw, 1.8rem);
   min-height: 100vh;
   min-height: 100svh;
   width: calc(100% - var(--sidebar-width));
   margin-left: var(--sidebar-width);
   box-sizing: border-box;
-  padding-left: var(--contact-page-left-pad);
-  padding-right: var(--contact-page-right-pad);
-  padding-top: clamp(1.5rem, 3vh, 2.8rem);
-  padding-bottom: clamp(2rem, 8vh, 5rem);
+  padding: clamp(1.5rem, 3vh, 2.8rem) var(--contact-page-pad) clamp(2rem, 8vh, 5rem);
   background: #fff;
   color: #000;
   overflow-x: hidden;
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .contact-form {
   width: min(860px, 100%);
   max-width: 100%;
-  margin: 0 auto;
+  transform: translateX(calc(var(--sidebar-width) * -0.5));
 }
 
 .contact-title {
@@ -55,7 +52,7 @@
   appearance: none;
 }
 
-.contact-input + .contact-input {
+.contact-input+.contact-input {
   margin-top: clamp(1.2rem, 2.5vh, 1.8rem);
 }
 
@@ -139,18 +136,19 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .contact-page {
-    width: calc(100% - var(--sidebar-width));
-    margin-left: var(--sidebar-width);
-    --contact-page-left-pad: 0.8rem;
+    width: 100%;
+    margin-left: 0;
+    --contact-page-left-pad: 1rem;
     --contact-page-right-pad: 1rem;
-    padding-top: 4rem;
+    padding-top: clamp(6rem, 12vh, 8rem);
     padding-bottom: 2rem;
   }
 
   .contact-form {
     width: 100%;
     margin: 0 auto;
+    transform: none;
   }
 }
