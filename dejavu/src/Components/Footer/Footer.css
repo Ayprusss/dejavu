@@ -6,8 +6,23 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  background: #fff;
+  background: transparent;
   color: #000;
+}
+
+@media (max-width: 1024px) {
+  .site-footer {
+    position: static;
+    right: auto;
+    bottom: auto;
+    padding: 2rem;
+    align-items: center;
+    background: transparent;
+  }
+
+  .footer-links {
+    align-items: center;
+  }
 }
 
 .footer-links {
