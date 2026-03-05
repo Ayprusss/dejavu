@@ -1,36 +1,87 @@
 .entry-page {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background-color: #ffffff;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .entry-image-wrap {
+  position: relative;
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
+  box-sizing: border-box;
+  padding: clamp(2rem, 5vh, 4rem) 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  animation: revealImage 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  opacity: 0;
+}
+
+@keyframes revealImage {
+  0% {
+    opacity: 0;
+    clip-path: inset(15% 25% 15% 25%);
+    transform: scale(0.95);
+  }
+
+  100% {
+    opacity: 1;
+    clip-path: inset(0% 0% 0% 0%);
+    transform: scale(1);
+  }
 }
 
 .entry-image {
   display: block;
-  height: 100vh;
-  width: auto;
-  max-width: min(50vw, 560px);
+  width: 100%;
+  height: 100%;
+  max-width: clamp(300px, 45vw, 600px);
   object-fit: cover;
+  transition: transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.8s ease;
+  will-change: transform;
+}
+
+.entry-image-wrap:hover .entry-image {
+  transform: scale(1.03);
+  filter: brightness(0.95);
 }
 
 .entry-collection-link {
   position: absolute;
-  right: clamp(1.8rem, 1.2rem + 2vw, 3rem);
-  top: clamp(16rem, 34vh, 24rem);
+  right: clamp(2rem, 8vw, 10rem);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Times New Roman', Times, serif;
   font-size: clamp(0.7rem, 0.62rem + 0.35vw, 0.75rem);
-  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #111;
   text-decoration: none;
-  line-height: 1.2;
+  line-height: 1.4;
+  z-index: 10;
+  opacity: 0;
+  animation: slideFadeIn 1s 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes slideFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(2rem, -50%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
 }
 
 .entry-collection-link::after {
@@ -38,35 +89,101 @@
   display: block;
   width: 100%;
   height: 1px;
-  background: #000;
+  background: #111;
+  margin-top: 6px;
   transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 180ms ease;
+  transform-origin: right;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .entry-collection-link:hover::after,
 .entry-collection-link:focus-visible::after {
   transform: scaleX(1);
+  transform-origin: left;
 }
 
+/* Responsive adjustments */
 @media (max-width: 900px) {
   .entry-page {
     align-items: flex-start;
     flex-direction: column;
+    justify-content: flex-start;
+    padding: 0;
+    min-height: auto;
+    overflow: visible;
   }
 
-  .entry-image-wrap,
-  .entry-image {
-    height: min(100vh, 100svh);
+  .entry-image-wrap {
+    height: auto;
+    width: 100%;
+    padding: clamp(4rem, 10vh, 6rem) clamp(1rem, 2vw, 2rem) 0 clamp(1rem, 2vw, 2rem);
+    display: block;
+    animation: revealImageMobile 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+
+  @keyframes revealImageMobile {
+    0% {
+      opacity: 0;
+      clip-path: inset(10% 10% 10% 10%);
+      transform: scale(0.97);
+    }
+
+    100% {
+      opacity: 1;
+      clip-path: inset(0% 0% 0% 0%);
+      transform: scale(1);
+    }
   }
 
   .entry-image {
     max-width: 100%;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    display: block;
   }
 
   .entry-collection-link {
-    position: static;
-    margin: 1rem 0 0 auto;
-    padding-right: 1rem;
+    position: relative;
+    top: auto;
+    bottom: auto;
+    right: auto;
+    transform: none;
+    margin: 1rem 0 3rem clamp(1rem, 2vw, 2rem);
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    border-radius: 0;
+    color: #111;
+    white-space: normal;
+    text-shadow: none;
+    animation: fade-in-up 0.8s ease forwards;
+    align-self: flex-start;
+    font-size: clamp(0.7rem, 0.62rem + 0.35vw, 0.75rem);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .entry-collection-link::after {
+    display: none;
+  }
+
+  .entry-collection-link:hover {
+    background: transparent;
+    color: #000;
   }
 }
