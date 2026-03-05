@@ -11,6 +11,8 @@ import About from './Pages/About/About';
 import Contact from './Pages/Contact/Contact';
 import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
 import { getProductById } from './data/products';
+import Collections from './Pages/Collections/Collections';
+import { COLLECTIONS_META } from './data/collectionsMeta';
 
 const INITIAL_CART_ITEMS = [
   {
@@ -78,6 +80,7 @@ function App() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [cartItems, setCartItems] = useState(INITIAL_CART_ITEMS);
+  const [activeCollectionId, setActiveCollectionId] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -171,14 +174,14 @@ function App() {
     setIsCartOpen(true);
   };
 
-  const handleNavigate = (page) => {
+  const handleNavigate = (page, hash = '') => {
     if (page === 'account') {
       setIsAccountOpen((prev) => !prev);
       return;
     }
 
     setIsAccountOpen(false);
-    navigate(pageToPath[page] ?? '/entry');
+    navigate((pageToPath[page] ?? '/entry') + hash);
   };
 
   return (
@@ -187,7 +190,11 @@ function App() {
         currentPage={currentPage}
         isAccountOpen={isAccountOpen}
         stockistLinks={STOCKIST_LINKS}
+        collectionsLinks={COLLECTIONS_META}
+        activeCollectionId={activeCollectionId}
         onNavigate={handleNavigate}
+        cartItemCount={cartItemCount}
+        onOpenCart={() => setIsCartOpen(true)}
       />
       <Cart
         isOpen={isCartOpen}
@@ -210,7 +217,7 @@ function App() {
             path="/products/:productId"
             element={<ShopItem key={location.pathname} onAddToCart={handleAddToCart} />}
           />
-          <Route path="/collections" element={<Entry />} />
+          <Route path="/collections" element={<Collections onActiveCollectionChange={setActiveCollectionId} />} />
           <Route path="/index" element={<Entry />} />
           <Route path="/stockist" element={<Entry />} />
           <Route path="/about" element={<About />} />
