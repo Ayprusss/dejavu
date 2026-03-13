@@ -104,12 +104,12 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 - [x] Run SQL `ALTER TABLE` commands in Supabase SQL Editor to rename Shopify-related columns (`shopifyId`, `shopifyOrderId`, `shopifyVariantId`) to Stripe equivalents, and add `shippingAddress` and `stock` columns to the existing Prisma tables.
 
 ### Phase 2: User Authentication & Storefront API
-- [ ] Implement user authentication routes (`POST /api/auth/register`, `POST /api/auth/login`) using JWTs and `bcrypt` for password hashing.
+- [x] Implement user authentication routes (`POST /api/auth/register`, `POST /api/auth/login`) using JWTs and `bcrypt` for password hashing.
 - [ ] Build a frontend `/account` page to allow users to log in, view their details, and fetch their past orders.
-- [ ] Implement controllers for `GET /api/products` and `GET /api/products/:id` using Supabase API.
+- [x] Implement controllers for `GET /api/products` and `GET /api/products/:id` using Supabase API.
 - [ ] Build basic Admin React pages (e.g., `/admin/products`) to allow easy entry of new products, uploading images, and setting stock levels for sizes.
-- [ ] Create basic backend routes (`POST /api/admin/products`, `PUT /api/admin/inventory`) to support the Admin UI.
-- [ ] Ensure frontend `Shop.jsx` dynamically loads products from Supabase instead of hardcoded data.
+- [x] Create basic backend routes (`POST /api/admin/products`, `PUT /api/admin/inventory`) to support the Admin UI.
+- [x] Ensure frontend `Shop.jsx` dynamically loads products from Supabase instead of hardcoded data.
 
 ### Phase 3: Stripe Checkout Integration
 - [ ] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
