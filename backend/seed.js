@@ -54,7 +54,7 @@ const seedProducts = [
             },
         }),
         price: 630.0,
-        images: [`${BASE_IMG_URL}isaac-4.jpg`, `${BASE_IMG_URL}isaac-1.jpg`, `${BASE_IMG_URL}isaac-2.jpg`, `${BASE_IMG_URL}isaac-3.jpg`],
+        images: [`${BASE_IMG_URL}isaac-4.webp`, `${BASE_IMG_URL}isaac-1.jpg`, `${BASE_IMG_URL}isaac-2.jpg`, `${BASE_IMG_URL}isaac-3.jpg`],
         updatedAt: new Date().toISOString()
     },
     {
