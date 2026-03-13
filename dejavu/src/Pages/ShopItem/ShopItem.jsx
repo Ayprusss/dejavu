@@ -1,9 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import {
-  getProductById,
-  SIZE_GUIDE_UNITS_LABEL,
-} from '../../data/products';
+import { SIZE_GUIDE_UNITS_LABEL } from '../../data/products';
 import './ShopItem.css';
 
 function getInitialSize(product) {
@@ -23,17 +20,73 @@ function getInitialSize(product) {
 
 function ShopItem({ onAddToCart }) {
   const { productId } = useParams();
-  const product = getProductById(productId);
-  const [selectedSize, setSelectedSize] = useState(() => getInitialSize(product));
+
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const [selectedSize, setSelectedSize] = useState('');
   const [isSizeListOpen, setIsSizeListOpen] = useState(false);
   const [openPanel, setOpenPanel] = useState('description');
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      try {
+        const response = await fetch(`http://localhost:5000/api/products/${productId}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch product details');
+        }
+
+        const data = await response.json();
+
+        // Transform the Supabase/Express payload to match what this legacy UI expects:
+        // Description and sizeGuide are stored as JSON strings in the DB
+        let parsedDescription = null;
+        try { parsedDescription = typeof data.description === 'string' ? JSON.parse(data.description) : data.description; } catch (e) { }
+
+        let parsedSizeGuide = null;
+        try { parsedSizeGuide = typeof data.sizeGuide === 'string' ? JSON.parse(data.sizeGuide) : data.sizeGuide; } catch (e) { }
+
+        const formattedProduct = {
+          id: data.id,
+          stripeProductId: data.stripeProductId,
+          name: data.name,
+          priceLabel: `$${data.price} USD`,
+          images: data.images?.map(src => ({ src, alt: data.name })) || [],
+          description: parsedDescription,
+          sizeGuide: parsedSizeGuide,
+          sizes: (data.ProductVariant || []).map(variant => ({
+            id: variant.id,
+            stripePriceId: variant.stripeProductId,
+            label: variant.size,
+            stock: variant.stock
+          }))
+        };
+
+        setProduct(formattedProduct);
+
+        // Auto-select the first size like the old getInitialSize
+        if (formattedProduct.sizes && formattedProduct.sizes.length > 0) {
+          setSelectedSize(formattedProduct.sizes[0].label);
+        }
+      } catch (err) {
+        console.error("Error fetching product:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [productId]);
 
   const selectedSizeData = useMemo(
     () => product?.sizes?.find((size) => size.label === selectedSize) ?? null,
     [product, selectedSize],
   );
 
-  if (!product) {
+  if (loading) return <div style={{ textAlign: "center", padding: "100px 0" }}>Loading product details...</div>;
+  if (error || !product) {
     return <Navigate to="/pages/shop" replace />;
   }
 
@@ -57,13 +110,18 @@ function ShopItem({ onAddToCart }) {
   };
 
   const handleAddToCart = () => {
-    if (isSelectedSizeSoldOut || !selectedSize) {
+    if (isSelectedSizeSoldOut || !selectedSize || !selectedSizeData) {
       return;
     }
 
     onAddToCart?.({
       productId: product.id,
+      variantId: selectedSizeData.id,
+      stripePriceId: selectedSizeData.stripePriceId,
       size: selectedSize,
+      name: product.name,
+      price: product.priceLabel,
+      image: product.images?.[0]?.src
     });
   };
 
