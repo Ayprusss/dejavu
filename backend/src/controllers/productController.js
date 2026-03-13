@@ -28,7 +28,7 @@ const getProductById = async (req, res) => {
         if (isUuid(id)) {
             query = query.eq("id", id);
         } else {
-            query = query.eq("shopifyId", id);
+            query = query.eq("stripeProductId", id);
         }
 
         const { data: product, error } = await query.single();
