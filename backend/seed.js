@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 // Initialize Supabase. Requires SUPABASE_URL and SUPABASE_KEY in .env
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -15,9 +15,25 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const BASE_IMG_URL = 'http://localhost:5173/images/';
 
+// Generate fixed UUIDs so foreign keys are easy to map in the seed script
+const userId = uuidv4();
+const prod1Id = uuidv4();
+const prod2Id = uuidv4();
+
+const var1sId = uuidv4();
+const var1mId = uuidv4();
+const var1lId = uuidv4();
+
+const var2sId = uuidv4();
+const var2mId = uuidv4();
+const var2lId = uuidv4();
+
+const order1Id = uuidv4();
+
 const seedProducts = [
     {
-        shopifyId: 'shopify-isaac-1',
+        id: prod1Id,
+        stripeProductId: 'prod_stripe_isaac_1',
         name: 'Isaac Tech Chino Pants in Tan',
         description: JSON.stringify({
             heading: '100% Ventile Cotton',
@@ -38,14 +54,11 @@ const seedProducts = [
         }),
         price: 630.0,
         images: [`${BASE_IMG_URL}isaac-4.jpg`, `${BASE_IMG_URL}isaac-1.jpg`, `${BASE_IMG_URL}isaac-2.jpg`, `${BASE_IMG_URL}isaac-3.jpg`],
-        variants: [
-            { shopifyVariantId: 'var-luca-s', size: 'S', stock: 20 },
-            { shopifyVariantId: 'var-luca-m', size: 'M', stock: 15 },
-            { shopifyVariantId: 'var-luca-l', size: 'L', stock: 3 },
-        ],
+        updatedAt: new Date().toISOString()
     },
     {
-        shopifyId: 'shopify-arlo-1',
+        id: prod2Id,
+        stripeProductId: 'prod_stripe_arlo_1',
         name: 'Arlo Windbreaker in Nylon',
         description: JSON.stringify({
             heading: '100% Polyamide',
@@ -66,83 +79,87 @@ const seedProducts = [
         }),
         price: 600.0,
         images: [`${BASE_IMG_URL}arlo_1.webp`, `${BASE_IMG_URL}arlo_2.webp`, `${BASE_IMG_URL}arlo_3.webp`],
-        variants: [
-            { shopifyVariantId: 'var-luca-s', size: 'S', stock: 0 },
-            { shopifyVariantId: 'var-luca-m', size: 'M', stock: 17 },
-            { shopifyVariantId: 'var-luca-l', size: 'L', stock: 3 },
-        ],
+        updatedAt: new Date().toISOString()
     }
 ];
 
+const seedVariants = [
+    { id: var1sId, productId: prod1Id, stripeProductId: 'price_isaac_s', size: 'S', stock: 20, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: var1mId, productId: prod1Id, stripeProductId: 'price_isaac_m', size: 'M', stock: 15, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: var1lId, productId: prod1Id, stripeProductId: 'price_isaac_l', size: 'L', stock: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: var2sId, productId: prod2Id, stripeProductId: 'price_arlo_s', size: 'S', stock: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: var2mId, productId: prod2Id, stripeProductId: 'price_arlo_m', size: 'M', stock: 17, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: var2lId, productId: prod2Id, stripeProductId: 'price_arlo_l', size: 'L', stock: 3, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+];
 async function main() {
     console.log('Start seeding...');
 
+    // 1. Delete existing data (Cascade deletes handle most, but we go bottom-up to be safe)
+    console.log('Clearing old data (this relies on the updated table schemas)...');
+    
+    // We use a dummy UUID that will never match to delete all rows.
+    const impossibleId = uuidv4();
+    await supabase.from('OrderItem').delete().neq('id', impossibleId);
+    await supabase.from('Order').delete().neq('id', impossibleId);
+    await supabase.from('ProductVariant').delete().neq('id', impossibleId);
+    await supabase.from('Product').delete().neq('id', impossibleId);
+    await supabase.from('User').delete().neq('id', impossibleId);
+
+    // 2. Seed User
+    console.log('Seeding User...');
+    // A standard bcrypt hash representing the password 'password123'
+    const dummyHash = "$2a$10$A.rO12S2Bv4vHl0O7n6V..F0157XW7P3t1P0g4T2159i/41Q74V3O"; 
+    const { error: userError } = await supabase.from('User').insert([{
+        id: userId,
+        email: 'test@example.com',
+        firstName: 'Test',
+        lastName: 'User',
+        passwordHash: dummyHash,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    }]);
+    if (userError) console.error("User Error:", userError);
+
+    // 3. Seed Products
+    console.log('Seeding Products...');
     for (const p of seedProducts) {
-        // 1. Upsert Product
-        const { data: existingProduct, error: fetchError } = await supabase
-            .from('Product')
-            .select('id')
-            .eq('shopifyId', p.shopifyId)
-            .single();
-
-        let productId;
-
-        if (existingProduct) {
-            productId = existingProduct.id;
-            // Update existing
-            await supabase.from('Product').update({
-                name: p.name,
-                description: p.description,
-                sizeGuide: p.sizeGuide,
-                price: p.price,
-                images: p.images
-            }).eq('id', productId);
-            console.log(`Updated product with shopifyId: ${p.shopifyId}`);
-        } else {
-            // Create new
-            const { data: newProduct, error: createError } = await supabase.from('Product').insert({
-                id: uuidv4(),
-                shopifyId: p.shopifyId,
-                name: p.name,
-                description: p.description,
-                sizeGuide: p.sizeGuide,
-                price: p.price,
-                images: p.images,
-                updatedAt: new Date().toISOString()
-            }).select().single();
-
-            if (createError) throw createError;
-            productId = newProduct.id;
-            console.log(`Created product with shopifyId: ${p.shopifyId}`);
-        }
-
-        // 2. Upsert Variants
-        for (const v of p.variants) {
-            const { data: existingVariant } = await supabase
-                .from('ProductVariant')
-                .select('id')
-                .eq('shopifyVariantId', v.shopifyVariantId)
-                .single();
-
-            if (existingVariant) {
-                await supabase.from('ProductVariant').update({
-                    size: v.size,
-                    stock: v.stock
-                }).eq('id', existingVariant.id);
-            } else {
-                await supabase.from('ProductVariant').insert({
-                    id: uuidv4(),
-                    productId: productId,
-                    shopifyVariantId: v.shopifyVariantId,
-                    size: v.size,
-                    stock: v.stock,
-                    updatedAt: new Date().toISOString()
-                });
-            }
-        }
+        const { error: productError } = await supabase.from('Product').insert([p]);
+        if (productError) console.error("Product Error:", productError);
     }
 
-    console.log('Seeding finished.');
+    // 4. Seed Variants
+    console.log('Seeding Variants (with stock & stripeProductIds)...');
+    for (const v of seedVariants) {
+        const { error: variantError } = await supabase.from('ProductVariant').insert([v]);
+        if (variantError) console.error("Variant Error:", variantError);
+    }
+
+    // 5. Seed Order
+    console.log('Seeding Order...');
+    const { error: orderError } = await supabase.from('Order').insert([{
+        id: order1Id,
+        userId: userId,
+        customerEmail: 'test@example.com',
+        stripeSessionId: 'cs_test_dummy123',
+        totalAmount: 1230.00,
+        status: 'PAID',
+        shippingAddress: JSON.stringify({
+            city: "New York", country: "US", line1: "123 Main St", postal_code: "10001", state: "NY"
+        }),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    }]);
+    if (orderError) console.error("Order Error:", orderError);
+
+    // 6. Seed Order Items
+    console.log('Seeding Order Items...');
+    const { error: itemError } = await supabase.from('OrderItem').insert([
+        { id: uuidv4(), orderId: order1Id, variantId: var1mId, quantity: 1, priceAtSale: 630.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, // 1 Isaac Pant (M)
+        { id: uuidv4(), orderId: order1Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }  // 1 Arlo Windbreaker (M)
+    ]);
+    if (itemError) console.error("Item Error:", itemError);
+
+    console.log('Seeding finished successfully!');
 }
 
 main().catch(console.error);
