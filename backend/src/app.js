@@ -1,11 +1,12 @@
+require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
-require('dotenv').config()
+const productRoutes = require('./routes/router');
 
 const app = express()
 app.use(cors())
 app.use(express.json())
-
+app.use('/api/products', productRoutes)
 
 app.get('/api/status', async (_req, res, _next) => {
     const healthcheck = {
@@ -15,7 +16,6 @@ app.get('/api/status', async (_req, res, _next) => {
     };
 
     try {
-        // add actual dependency checks here 
         res.send(healthcheck);
     } catch (error) {
         healthcheck.message = error;
