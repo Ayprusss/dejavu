@@ -55,7 +55,9 @@ CREATE TABLE IF NOT EXISTS "User" (
   "passwordHash" TEXT NOT NULL,
   "firstName" TEXT,
   "lastName" TEXT,
-  "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  "isAdmin" BOOLEAN DEFAULT FALSE,
+  "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Rename existing Shopify columns to Stripe equivalents
