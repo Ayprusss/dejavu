@@ -10,20 +10,10 @@ import ShopItem from './Pages/ShopItem/ShopItem';
 import About from './Pages/About/About';
 import Contact from './Pages/Contact/Contact';
 import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
-import { getProductById } from './data/products';
 import Collections from './Pages/Collections/Collections';
 import { COLLECTIONS_META } from './data/collectionsMeta';
 
-const INITIAL_CART_ITEMS = [
-  {
-    id: 'item-1',
-    name: 'Luca Deconstructed Tailored Jacket in Wool & Linen',
-    size: 'M',
-    price: 850,
-    quantity: 1,
-    image: introPhoto,
-  },
-];
+const INITIAL_CART_ITEMS = [];
 
 const STOCKIST_LINKS = [
   {
@@ -141,14 +131,13 @@ function App() {
     setCartItems((prev) => prev.filter((item) => item.id !== itemId));
   };
 
-  const handleAddToCart = ({ productId, size }) => {
-    const product = getProductById(productId);
-
-    if (!product || !size) {
+  const handleAddToCart = (productPayload) => {
+    if (!productPayload || !productPayload.size) {
       return;
     }
 
-    const cartLineId = `${productId}-${size}`;
+    const cartLineId = productPayload.variantId || `${productPayload.productId}-${productPayload.size}`;
+    
     setCartItems((prev) => {
       const existingItem = prev.find((item) => item.id === cartLineId);
 
@@ -158,15 +147,22 @@ function App() {
         );
       }
 
+      // Convert priceLabel string back into a number for Cart subtotal calculation
+      const numericPrice = typeof productPayload.price === 'string' 
+        ? Number(productPayload.price.replace(/[^0-9.-]+/g,"")) 
+        : Number(productPayload.price) || 0;
+
       return [
         ...prev,
         {
           id: cartLineId,
-          name: product.name,
-          size,
-          price: Number(product.priceUsd) || 0,
+          variantId: productPayload.variantId,
+          stripePriceId: productPayload.stripePriceId,
+          name: productPayload.name,
+          size: productPayload.size,
+          price: numericPrice,
           quantity: 1,
-          image: product.images?.[0]?.src ?? introPhoto,
+          image: productPayload.image || introPhoto,
         },
       ];
     });

@@ -12,6 +12,18 @@
   background: #fff;
   color: #000;
   overflow-x: hidden;
+  animation: shopPageFadeIn 0.6s ease-out forwards;
+}
+
+@keyframes shopPageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .shop-page-inner {
@@ -138,11 +150,13 @@
   }
 
   .shop-grid {
-    gap: clamp(0.55rem, 1.4vw, 1rem);
+    grid-template-columns: repeat(2, max-content);
+    gap: clamp(2rem, 4vw, 3rem) clamp(1.5rem, 4vw, 2.5rem);
   }
 
   .shop-card {
-    max-width: clamp(12rem, 22vw, 17.5rem);
+    width: clamp(14rem, 30vw, 21rem);
+    max-width: 100%;
     justify-self: start;
   }
 }
@@ -162,7 +176,7 @@
 
   .shop-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(0.5rem, 1.5vw, 1rem) clamp(0.5rem, 1.5vw, 1rem);
+    gap: clamp(1rem, 3vw, 2rem) clamp(0.5rem, 2vw, 1.25rem);
   }
 
   .shop-card {
