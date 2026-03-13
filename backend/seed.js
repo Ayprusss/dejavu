@@ -17,6 +17,7 @@ const BASE_IMG_URL = 'http://localhost:5173/images/';
 
 // Generate fixed UUIDs so foreign keys are easy to map in the seed script
 const userId = uuidv4();
+const adminId = uuidv4();
 const prod1Id = uuidv4();
 const prod2Id = uuidv4();
 
@@ -106,18 +107,31 @@ async function main() {
     await supabase.from('User').delete().neq('id', impossibleId);
 
     // 2. Seed User
-    console.log('Seeding User...');
+    console.log('Seeding Users...');
     // A standard bcrypt hash representing the password 'password123'
     const dummyHash = "$2a$10$A.rO12S2Bv4vHl0O7n6V..F0157XW7P3t1P0g4T2159i/41Q74V3O"; 
-    const { error: userError } = await supabase.from('User').insert([{
-        id: userId,
-        email: 'test@example.com',
-        firstName: 'Test',
-        lastName: 'User',
-        passwordHash: dummyHash,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-    }]);
+    const { error: userError } = await supabase.from('User').insert([
+        {
+            id: userId,
+            email: 'test@example.com',
+            firstName: 'Test',
+            lastName: 'User',
+            passwordHash: dummyHash,
+            isAdmin: false,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        },
+        {
+            id: adminId,
+            email: 'admin@example.com',
+            firstName: 'Admin',
+            lastName: 'User',
+            passwordHash: dummyHash,
+            isAdmin: true,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        }
+    ]);
     if (userError) console.error("User Error:", userError);
 
     // 3. Seed Products
