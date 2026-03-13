@@ -1,12 +1,15 @@
-require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const productRoutes = require('./routes/router');
+const authRoutes = require('./routes/authRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const app = express()
 app.use(cors())
 app.use(express.json())
 app.use('/api/products', productRoutes)
+app.use('/api/auth', authRoutes)
+app.use('/api/admin', adminRoutes)
 
 app.get('/api/status', async (_req, res, _next) => {
     const healthcheck = {
