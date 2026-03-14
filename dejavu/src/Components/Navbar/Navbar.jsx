@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import './Navbar.css';
 
 const NAV_LINKS = [
@@ -24,6 +24,52 @@ function Navbar({
   const [isStockistExpanded, setIsStockistExpanded] = useState(false);
   const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loggedInUser, setLoggedInUser] = useState(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('adminToken');
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setLoggedInUser({ id: payload.id, isAdmin: payload.isAdmin });
+      } catch (e) {}
+    }
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Login failed');
+      
+      localStorage.setItem('adminToken', data.token);
+      setLoggedInUser(data.user);
+      setEmail('');
+      setPassword('');
+      window.location.href = '/account';
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('adminToken');
+    setLoggedInUser(null);
+  };
 
   const handleNavClick = (event, page, hash = '') => {
     event.preventDefault();
@@ -170,42 +216,81 @@ function Navbar({
           className={`account-panel${isAccountOpen ? ' is-open' : ''}`}
           aria-hidden={!isAccountOpen}
         >
-          <form className="account-form" action="#" method="post">
-            <label className="account-input-label" htmlFor="account-email">
-              Email
-            </label>
-            <input
-              className="account-input"
-              id="account-email"
-              name="email"
-              type="email"
-              autoComplete="email"
-            />
-
-            <label className="account-input-label" htmlFor="account-password">
-              Password
-            </label>
-            <input
-              className="account-input"
-              id="account-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-            />
-
-            <div className="account-actions">
-              <button type="submit" className="account-login-button">
-                Login
+          {loggedInUser ? (
+            <div className="account-form" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>Welcome back!</p>
+              
+              <button 
+                type="button" 
+                className="account-login-button" 
+                onClick={() => window.location.href = '/account'}
+              >
+                My Account
               </button>
-              <button type="button" className="account-link-button">
-                Create account
-              </button>
-              <span className="account-action-divider" aria-hidden="true" />
-              <button type="button" className="account-link-button">
-                Forgot?
+
+              {loggedInUser.isAdmin && (
+                <button 
+                  type="button" 
+                  className="account-login-button" 
+                  onClick={(e) => handleNavClick(e, 'admin')}
+                >
+                  Admin Dashboard
+                </button>
+              )}
+              <button  
+                type="button" 
+                className="account-login-button" 
+                onClick={handleLogout}
+                style={{ background: 'transparent', color: '#000', border: '1px solid #000' }}
+              >
+                Log Out
               </button>
             </div>
-          </form>
+          ) : (
+            <form className="account-form" onSubmit={handleLogin}>
+              {loginError && <p style={{ color: '#eb5757', fontSize: '13px', margin: '0 0 10px' }}>{loginError}</p>}
+              <label className="account-input-label" htmlFor="account-email">
+                Email
+              </label>
+              <input
+                className="account-input"
+                id="account-email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+
+              <label className="account-input-label" htmlFor="account-password">
+                Password
+              </label>
+              <input
+                className="account-input"
+                id="account-password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+
+              <div className="account-actions">
+                <button type="submit" className="account-login-button" disabled={isLoggingIn}>
+                  {isLoggingIn ? 'Logging in...' : 'Login'}
+                </button>
+                <button type="button" className="account-link-button">
+                  Create account
+                </button>
+                <span className="account-action-divider" aria-hidden="true" />
+                <button type="button" className="account-link-button">
+                  Forgot?
+                </button>
+              </div>
+            </form>
+          )}
         </section>
       </div>
     </aside>
