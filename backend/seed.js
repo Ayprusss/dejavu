@@ -30,6 +30,7 @@ const var2mId = uuidv4();
 const var2lId = uuidv4();
 
 const order1Id = uuidv4();
+const order2Id = uuidv4();
 
 const seedProducts = [
     {
@@ -108,8 +109,9 @@ async function main() {
 
     // 2. Seed User
     console.log('Seeding Users...');
-    // A standard bcrypt hash representing the password 'password123'
-    const dummyHash = "$2a$10$A.rO12S2Bv4vHl0O7n6V..F0157XW7P3t1P0g4T2159i/41Q74V3O"; 
+    // Generate a fresh bcrypt hash for 'password123' dynamically
+    const bcrypt = require('bcrypt');
+    const dummyHash = await bcrypt.hash('password123', 10); 
     const { error: userError } = await supabase.from('User').insert([
         {
             id: userId,
@@ -150,26 +152,42 @@ async function main() {
 
     // 5. Seed Order
     console.log('Seeding Order...');
-    const { error: orderError } = await supabase.from('Order').insert([{
-        id: order1Id,
-        userId: userId,
-        customerEmail: 'test@example.com',
-        stripeSessionId: 'cs_test_dummy123',
-        totalAmount: 1230.00,
-        status: 'PAID',
-        shippingAddress: JSON.stringify({
-            city: "New York", country: "US", line1: "123 Main St", postal_code: "10001", state: "NY"
-        }),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-    }]);
+    const { error: orderError } = await supabase.from('Order').insert([
+        {
+            id: order1Id,
+            userId: userId,
+            customerEmail: 'test@example.com',
+            stripeSessionId: 'cs_test_dummy123',
+            totalAmount: 1230.00,
+            status: 'PAID',
+            shippingAddress: JSON.stringify({
+                city: "New York", country: "US", line1: "123 Main St", postal_code: "10001", state: "NY"
+            }),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        },
+        {
+            id: order2Id,
+            userId: adminId,
+            customerEmail: 'admin@example.com',
+            stripeSessionId: 'cs_test_dummy456',
+            totalAmount: 600.00,
+            status: 'SHIPPED',
+            shippingAddress: JSON.stringify({
+                city: "Los Angeles", country: "US", line1: "456 Oak St", postal_code: "90001", state: "CA"
+            }),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        }
+    ]);
     if (orderError) console.error("Order Error:", orderError);
 
     // 6. Seed Order Items
     console.log('Seeding Order Items...');
     const { error: itemError } = await supabase.from('OrderItem').insert([
         { id: uuidv4(), orderId: order1Id, variantId: var1mId, quantity: 1, priceAtSale: 630.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, // 1 Isaac Pant (M)
-        { id: uuidv4(), orderId: order1Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }  // 1 Arlo Windbreaker (M)
+        { id: uuidv4(), orderId: order1Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }, // 1 Arlo Windbreaker (M)
+        { id: uuidv4(), orderId: order2Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }  // 1 Arlo Windbreaker (M)
     ]);
     if (itemError) console.error("Item Error:", itemError);
 
