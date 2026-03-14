@@ -9,6 +9,8 @@ import Shop from './Pages/Shop/Shop';
 import ShopItem from './Pages/ShopItem/ShopItem';
 import About from './Pages/About/About';
 import Contact from './Pages/Contact/Contact';
+import Admin from './Pages/Admin/Admin';
+import Account from './Pages/Account/Account';
 import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
 import Collections from './Pages/Collections/Collections';
 import { COLLECTIONS_META } from './data/collectionsMeta';
@@ -95,6 +97,8 @@ function App() {
     stockist: '/stockist',
     about: '/about',
     contact: '/contact',
+    admin: '/admin',
+    account: '/account',
   };
 
   const currentPage =
@@ -180,30 +184,37 @@ function App() {
     navigate((pageToPath[page] ?? '/entry') + hash);
   };
 
+  const isAppRoute = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/account');
+
   return (
     <div className="app-shell">
-      <Navbar
-        currentPage={currentPage}
-        isAccountOpen={isAccountOpen}
-        stockistLinks={STOCKIST_LINKS}
-        collectionsLinks={COLLECTIONS_META}
-        activeCollectionId={activeCollectionId}
-        onNavigate={handleNavigate}
-        cartItemCount={cartItemCount}
-        onOpenCart={() => setIsCartOpen(true)}
-      />
-      <Cart
-        isOpen={isCartOpen}
-        itemCount={cartItemCount}
-        items={cartItems}
-        onOpen={() => setIsCartOpen(true)}
-        onClose={() => setIsCartOpen(false)}
-        onIncrement={handleIncrement}
-        onDecrement={handleDecrement}
-        onRemove={handleRemove}
-      />
-      <Footer />
-      <main className="app-content">
+      {isAppRoute && (
+        <Navbar
+          currentPage={currentPage}
+          isAccountOpen={isAccountOpen}
+          stockistLinks={STOCKIST_LINKS}
+          collectionsLinks={COLLECTIONS_META}
+          activeCollectionId={activeCollectionId}
+          onNavigate={handleNavigate}
+          cartItemCount={cartItemCount}
+          onOpenCart={() => setIsCartOpen(true)}
+        />
+      )}
+      
+      {isAppRoute && (
+        <Cart
+          isOpen={isCartOpen}
+          itemCount={cartItemCount}
+          items={cartItems}
+          onOpen={() => setIsCartOpen(true)}
+          onClose={() => setIsCartOpen(false)}
+          onIncrement={handleIncrement}
+          onDecrement={handleDecrement}
+          onRemove={handleRemove}
+        />
+      )}
+      
+      <main className={isAppRoute ? "app-content" : ""}>
         <Routes>
           <Route path="/" element={<Navigate to="/entry" replace />} />
           <Route path="/entry" element={<Entry />} />
@@ -218,9 +229,15 @@ function App() {
           <Route path="/stockist" element={<Entry />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          
+          <Route path="/admin/*" element={<Admin />} />
+          <Route path="/account/*" element={<Account />} />
+          
           <Route path="*" element={<Navigate to="/entry" replace />} />
         </Routes>
       </main>
+
+      {isAppRoute && <Footer />}
     </div>
   );
 }
