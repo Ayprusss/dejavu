@@ -105,9 +105,12 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 
 ### Phase 2: User Authentication & Storefront API
 - [x] Implement user authentication routes (`POST /api/auth/register`, `POST /api/auth/login`) using JWTs and `bcrypt` for password hashing.
-- [ ] Build a frontend `/account` page to allow users to log in, view their details, and fetch their past orders.
+- [x] Build a frontend `/account` page for non-admin users.
+  - [x] Need a backend route (`GET /api/user/orders`) to fetch orders for the logged-in user.
+  - [x] Need an `Account.jsx` frontend component adopting the minimalist black/white styling from the Admin screens.
+  - [x] Need to route authenticated non-admin users to `/account` when clicking "My Account" in the Navbar.
 - [x] Implement controllers for `GET /api/products` and `GET /api/products/:id` using Supabase API.
-- [ ] Build basic Admin React pages (e.g., `/admin/products`) to allow easy entry of new products, uploading images, and setting stock levels for sizes.
+- [x] Build basic Admin React pages (`/admin` dashboard) with minimalist styling (white/black + one highlight color). Provide login, product entry, and order viewing.
 - [x] Create basic backend routes (`POST /api/admin/products`, `PUT /api/admin/inventory`) to support the Admin UI.
 - [x] Ensure frontend `Shop.jsx` dynamically loads products from Supabase instead of hardcoded data.
 
