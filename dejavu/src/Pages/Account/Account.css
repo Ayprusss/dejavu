@@ -1,0 +1,129 @@
+.account-page {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  background-color: #ffffff;
+  color: #000000;
+  min-height: 100vh;
+  padding: 40px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.account-page h1, 
+.account-page h2, 
+.account-page p, 
+.account-page button, 
+.account-page table {
+  font-family: inherit;
+}
+
+.account-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e5e5;
+  padding-bottom: 20px;
+  margin-bottom: 30px;
+}
+
+.account-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.account-subtitle {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 20px 0;
+}
+
+.account-btn {
+  background-color: #000;
+  color: #fff;
+  border: 1px solid #000;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.account-btn:hover {
+  background-color: #fff;
+  color: #000;
+}
+
+.account-btn--highlight {
+  background-color: #2F80ED;
+  border-color: #2F80ED;
+  color: #fff;
+}
+
+.account-btn--highlight:hover {
+  background-color: #1a6bdd;
+  border-color: #1a6bdd;
+  color: #fff;
+}
+
+.account-panel {
+  border: 1px solid #e5e5e5;
+  padding: 24px;
+  margin-bottom: 30px;
+}
+
+.account-error {
+  color: #eb5757;
+  font-size: 14px;
+}
+
+.account-orders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.account-order-card {
+  border: 1px solid #eaeaea;
+  padding: 20px;
+  background-color: #fafafa;
+}
+
+.account-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eaeaea;
+}
+
+.account-order-date {
+  font-size: 13px;
+  color: #666;
+  margin-top: 5px;
+}
+
+.account-order-status {
+  text-align: right;
+  font-size: 14px;
+}
+
+.account-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  background-color: #fff;
+}
+
+.account-table th,
+.account-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.account-table th {
+  font-weight: 500;
+  color: #666;
+  border-bottom: 1px solid #eaeaea;
+}
