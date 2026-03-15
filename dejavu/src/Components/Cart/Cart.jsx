@@ -121,6 +121,8 @@ function Cart({
 
   const isControlLocked = isSubtotalLoading;
 
+  const isCheckoutDisabled = hasItems && !isSubtotalLoading;
+
   return (
     <>
       <button
@@ -219,7 +221,13 @@ function Cart({
                   <span>{formatPrice(subtotal)} USD</span>
                 )}
               </div>
-              <button type="button" className="cart-checkout">Check Out</button>
+              <button type="button"
+                className="cart-checkout"
+                disabled={isCheckoutDisabled}
+                onClick={handleCheckout}
+              >
+                Check Out
+              </button>
               <p className="cart-footnote">Shipping, taxes, and discount codes are calculated at checkout</p>
             </footer>
           </aside>
