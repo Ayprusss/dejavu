@@ -115,13 +115,13 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 - [x] Ensure frontend `Shop.jsx` dynamically loads products from Supabase instead of hardcoded data.
 
 ### Phase 3: Stripe Checkout Integration
-- [ ] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
+- [X] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
 - [ ] Implement the `POST /api/checkout` route:
-    - Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
-    - Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
-    - Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
-    - Handle successful response by extracting `session.url`.
-    - Send the URL back to the frontend to redirect the user to Stripe Checkout.
+    - [ ] Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
+    - [ ] Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
+    - [ ] Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
+    - [ ] Handle successful response by extracting `session.url`.
+    - [ ] Send the URL back to the frontend to redirect the user to Stripe Checkout.
 
 ### Phase 4: Webhooks & Order Fulfillment
 - [ ] Create the `POST /api/webhooks/stripe` endpoint.
