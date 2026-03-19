@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { API_URL } from '../../config/api';
 import './Cart.css';
 
 function formatPrice(value) {
@@ -125,7 +126,7 @@ function Cart({
 
   const handleCheckout = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/checkout', {
+      const response = await fetch(`${API_URL}/api/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
