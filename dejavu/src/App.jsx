@@ -11,6 +11,8 @@ import About from './Pages/About/About';
 import Contact from './Pages/Contact/Contact';
 import Admin from './Pages/Admin/Admin';
 import Account from './Pages/Account/Account';
+import CheckoutSuccess from './Pages/Checkout/CheckoutSuccess';
+import CheckoutCancel from './Pages/Checkout/CheckoutCancel';
 import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
 import Collections from './Pages/Collections/Collections';
 import { COLLECTIONS_META } from './data/collectionsMeta';
@@ -229,6 +231,8 @@ function App() {
           <Route path="/stockist" element={<Entry />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          <Route path="/checkout/cancel" element={<CheckoutCancel />} />
           
           <Route path="/admin/*" element={<Admin />} />
           <Route path="/account/*" element={<Account />} />
