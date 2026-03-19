@@ -121,7 +121,35 @@ function Cart({
 
   const isControlLocked = isSubtotalLoading;
 
-  const isCheckoutDisabled = hasItems && !isSubtotalLoading;
+  const isCheckoutDisabled = !hasItems || isSubtotalLoading;
+
+  const handleCheckout = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            variantId: item.variantId,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Checkout error:', data.message);
+        return;
+      }
+
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
+    } catch (error) {
+      console.error('Checkout failed:', error);
+    }
+  };
 
   return (
     <>
