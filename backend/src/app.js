@@ -8,7 +8,13 @@ const checkoutRoutes = require('./routes/checkoutRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 
 const app = express()
-app.use(cors())
+app.use(cors({
+  origin: [
+    'https://dejavu-ten.vercel.app',
+    'http://localhost:5173'  // Vite dev server
+  ],
+  credentials: true
+}))
 
 // Stripe webhooks require the raw body for signature validation.
 // This route MUST be registered BEFORE express.json().
