@@ -5,9 +5,15 @@ const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const userRoutes = require('./routes/userRoutes');
 const checkoutRoutes = require('./routes/checkoutRoutes');
+const webhookRoutes = require('./routes/webhookRoutes');
 
 const app = express()
 app.use(cors())
+
+// Stripe webhooks require the raw body for signature validation.
+// This route MUST be registered BEFORE express.json().
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), webhookRoutes);
+
 app.use(express.json())
 app.use('/api/products', productRoutes)
 app.use('/api/auth', authRoutes)
