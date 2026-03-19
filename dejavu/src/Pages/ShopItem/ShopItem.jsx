@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { SIZE_GUIDE_UNITS_LABEL } from '../../data/products';
+import { API_URL } from '../../config/api';
 import './ShopItem.css';
 
 function getInitialSize(product) {
@@ -32,7 +33,7 @@ function ShopItem({ onAddToCart }) {
   useEffect(() => {
     const fetchProduct = async () => {
       try {
-        const response = await fetch(`http://localhost:5000/api/products/${productId}`);
+        const response = await fetch(`${API_URL}/api/products/${productId}`);
         if (!response.ok) {
           throw new Error('Failed to fetch product details');
         }

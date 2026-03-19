@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { API_URL } from '../../config/api';
 import './Account.css';
 
 function Account() {
@@ -31,7 +32,7 @@ function Account() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('http://localhost:5000/api/user/orders', {
+        const res = await fetch(`${API_URL}/api/user/orders`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) {
