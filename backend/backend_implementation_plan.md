@@ -116,25 +116,25 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 
 ### Phase 3: Stripe Checkout Integration
 - [X] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
-- [ ] Implement the `POST /api/checkout` route:
-    - [ ] Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
-    - [ ] Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
-    - [ ] Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
-    - [ ] Handle successful response by extracting `session.url`.
-    - [ ] Send the URL back to the frontend to redirect the user to Stripe Checkout.
+- [X] Implement the `POST /api/checkout` route:
+    - [X] Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
+    - [X] Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
+    - [X] Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
+    - [X] Handle successful response by extracting `session.url`.
+    - [X] Send the URL back to the frontend to redirect the user to Stripe Checkout.
 
 ### Phase 4: Webhooks & Order Fulfillment
-- [ ] Create the `POST /api/webhooks/stripe` endpoint.
-- [ ] **Crucial**: Implement middleware specifically for the webhook route to capture the RAW request body (required for Stripe signature validation — standard `express.json()` prevents this).
-- [ ] Read the Stripe Webhook Signing Secret (`STRIPE_WEBHOOK_SECRET`) from `.env`.
-- [ ] Use `stripe.webhooks.constructEvent` to validate the payload.
-- [ ] Listen specifically for `checkout.session.completed`:
+- [X] Create the `POST /api/webhooks/stripe` endpoint.
+- [X] **Crucial**: Implement middleware specifically for the webhook route to capture the RAW request body (required for Stripe signature validation — standard `express.json()` prevents this).
+- [X] Read the Stripe Webhook Signing Secret (`STRIPE_WEBHOOK_SECRET`) from `.env`.
+- [X] Use `stripe.webhooks.constructEvent` to validate the payload.
+- [X] Listen specifically for `checkout.session.completed`:
     - Create a new `Order` row in Supabase marking it as 'PAID'.
     - Create associated `OrderItem` rows.
     - Decrement `stock` for each `product_variants` row purchased to avoid overselling.
-- [ ] Use the Stripe CLI to forward webhooks to `localhost` to test locally.
+- [X] Use the Stripe CLI to forward webhooks to `localhost` to test locally.
 
 ### Phase 5: Frontend Connection & Admin Orders
-- [ ] Update frontend `Cart.jsx` checkout button to call `POST /api/checkout`, grab the URL, and execute `window.location.href = data.checkoutUrl`.
-- [ ] Add success/cancel redirect pages (`/checkout/success` and `/checkout/cancel`) in the frontend router to handle users returning from Stripe.
-- [ ] Build an Admin UI screen (`/admin/orders`) to view paid orders, see shipping addresses gathered by Stripe, and mark them as fulfilled.
+- [X] Update frontend `Cart.jsx` checkout button to call `POST /api/checkout`, grab the URL, and execute `window.location.href = data.checkoutUrl`.
+- [X] Add success/cancel redirect pages (`/checkout/success` and `/checkout/cancel`) in the frontend router to handle users returning from Stripe.
+- [X] Build an Admin UI screen (`/admin/orders`) to view paid orders, see shipping addresses gathered by Stripe, and mark them as fulfilled.
