@@ -10,5 +10,6 @@ router.post('/products', adminController.createProduct);
 router.put('/products/:id', adminController.updateProduct);
 router.put('/inventory/:variantId', adminController.updateInventory);
 router.get('/orders', adminController.getOrders);
+router.put('/orders/:orderId/status', adminController.updateOrderStatus);
 
 module.exports = router;
