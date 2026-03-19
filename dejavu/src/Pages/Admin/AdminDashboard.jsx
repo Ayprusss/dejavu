@@ -114,28 +114,80 @@ function AdminDashboard({ token, onLogout }) {
           )}
 
           {activeTab === 'orders' && (
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Order ID</th>
-                  <th>Customer</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map(o => (
-                  <tr key={o.id}>
-                    <td>{o.id.substring(0, 8)}...</td>
-                    <td>{o.customerEmail}</td>
-                    <td>{o.status}</td>
-                    <td>${o.totalAmount}</td>
-                    <td>{new Date(o.createdAt).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="admin-orders-list">
+              {orders.length === 0 ? (
+                <p>No orders yet.</p>
+              ) : (
+                orders.map(o => {
+                  let shipping = null;
+                  try { shipping = typeof o.shippingAddress === 'string' ? JSON.parse(o.shippingAddress) : o.shippingAddress; } catch { /* ignore */ }
+
+                  return (
+                    <div key={o.id} className="admin-panel" style={{ marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                        <div>
+                          <strong>{o.customerEmail || 'Guest'}</strong>
+                          <div style={{ fontSize: '13px', color: '#666', marginTop: '4px' }}>
+                            {o.id.substring(0, 8)}… · {new Date(o.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontWeight: '600', marginBottom: '6px' }}>${o.totalAmount}</div>
+                          <select
+                            value={o.status}
+                            onChange={async (e) => {
+                              try {
+                                const res = await fetch(`http://localhost:5000/api/admin/orders/${o.id}/status`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                                  body: JSON.stringify({ status: e.target.value })
+                                });
+                                if (!res.ok) throw new Error('Failed');
+                                fetchData();
+                              } catch (err) { alert(err.message); }
+                            }}
+                            style={{ padding: '4px 8px', fontSize: '13px', border: '1px solid #ccc', fontFamily: 'inherit' }}
+                          >
+                            <option value="PAID">PAID</option>
+                            <option value="SHIPPED">SHIPPED</option>
+                            <option value="FULFILLED">FULFILLED</option>
+                            <option value="CANCELLED">CANCELLED</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {shipping && (
+                        <div style={{ fontSize: '13px', color: '#555', marginBottom: '12px', padding: '10px', background: '#fafafa', border: '1px solid #eaeaea' }}>
+                          <strong style={{ color: '#000' }}>Ship to:</strong>{' '}
+                          {[shipping.line1, shipping.line2, shipping.city, shipping.state, shipping.postal_code, shipping.country].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+
+                      {o.OrderItem && o.OrderItem.length > 0 && (
+                        <table className="admin-table" style={{ marginTop: '0' }}>
+                          <thead>
+                            <tr>
+                              <th>Variant ID</th>
+                              <th>Qty</th>
+                              <th>Price</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {o.OrderItem.map(item => (
+                              <tr key={item.id}>
+                                <td style={{ fontSize: '13px' }}>{item.variantId ? item.variantId.substring(0, 8) + '…' : '—'}</td>
+                                <td>{item.quantity}</td>
+                                <td>${item.priceAtSale}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           )}
 
           {activeTab === 'add_product' && (
