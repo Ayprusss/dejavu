@@ -99,9 +99,36 @@ const getOrders = async(req, res) => {
     }
 };
 
+const updateOrderStatus = async (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ['PAID', 'SHIPPED', 'FULFILLED', 'CANCELLED'];
+    if (!validStatuses.includes(status)) {
+        return res.status(400).json({ message: `Status must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from("Order")
+            .update({ status, updatedAt: new Date().toISOString() })
+            .eq("id", orderId)
+            .select();
+
+        if (error) throw error;
+        if (data.length === 0) return res.status(404).json({ message: "Order not found" });
+
+        res.status(200).json({ message: "Order status updated", order: data[0] });
+    } catch (error) {
+        console.error("Error updating order status:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
+};
+
 module.exports = {
     createProduct,
     updateProduct,
     updateInventory,
-    getOrders
+    getOrders,
+    updateOrderStatus
 };
