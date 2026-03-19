@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { API_URL } from '../../config/api';
 import './Admin.css';
 
 function AdminDashboard({ token, onLogout }) {
@@ -17,12 +18,12 @@ function AdminDashboard({ token, onLogout }) {
     setError(null);
     try {
       if (activeTab === 'products') {
-        const res = await fetch('http://localhost:5000/api/products');
+        const res = await fetch(`${API_URL}/api/products`);
         if (!res.ok) throw new Error('Failed to fetch products');
         const data = await res.json();
         setProducts(data);
       } else if (activeTab === 'orders') {
-        const res = await fetch('http://localhost:5000/api/admin/orders', {
+        const res = await fetch(`${API_URL}/api/admin/orders`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error('Failed to fetch orders');
@@ -41,7 +42,7 @@ function AdminDashboard({ token, onLogout }) {
     if (newStock === null || isNaN(newStock)) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/inventory/${variantId}`, {
+      const res = await fetch(`${API_URL}/api/admin/inventory/${variantId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -137,7 +138,7 @@ function AdminDashboard({ token, onLogout }) {
                             value={o.status}
                             onChange={async (e) => {
                               try {
-                                const res = await fetch(`http://localhost:5000/api/admin/orders/${o.id}/status`, {
+                                const res = await fetch(`${API_URL}/api/admin/orders/${o.id}/status`, {
                                   method: 'PUT',
                                   headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                                   body: JSON.stringify({ status: e.target.value })
