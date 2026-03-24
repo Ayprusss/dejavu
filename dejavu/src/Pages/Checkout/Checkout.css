@@ -8,7 +8,14 @@
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
+  padding-left: calc(var(--sidebar-width, 0px) + 20px);
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  .checkout-page {
+    padding-left: 20px;
+  }
 }
 
 .checkout-icon {
@@ -98,4 +105,117 @@
   font-size: 13px;
   color: #999;
   margin-top: 24px;
+}
+
+.checkout-success-page {
+  padding-top: 60px;
+  padding-bottom: 60px;
+}
+
+.checkout-success-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 40px;
+}
+
+.checkout-order-summary {
+  width: 100%;
+  max-width: 600px;
+  background-color: #fafafa;
+  border: 1px solid #eaeaea;
+  padding: 32px;
+  margin-bottom: 40px;
+  text-align: left;
+}
+
+.checkout-order-summary h2 {
+  margin: 0 0 24px 0;
+  font-size: 18px;
+  border-bottom: 1px solid #eaeaea;
+  padding-bottom: 16px;
+}
+
+.checkout-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.checkout-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.checkout-item-image {
+  width: 60px;
+  height: 80px;
+  object-fit: cover;
+  background-color: #eee;
+}
+
+.checkout-item-details {
+  flex: 1;
+}
+
+.checkout-item-name {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0 0 4px 0;
+}
+
+.checkout-item-meta {
+  font-size: 13px;
+  color: #666;
+  margin: 0;
+}
+
+.checkout-item-price {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.checkout-totals {
+  border-top: 1px solid #eaeaea;
+  padding-top: 24px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkout-total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #666;
+}
+
+.checkout-total-final {
+  font-size: 16px;
+  font-weight: 600;
+  color: #000;
+  margin-top: 8px;
+  border-top: 1px solid #eaeaea;
+  padding-top: 16px;
+}
+
+.checkout-shipping-info {
+  background-color: #fff;
+  padding: 24px;
+  border: 1px solid #eaeaea;
+}
+
+.checkout-shipping-info h3 {
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  font-weight: 600;
+}
+
+.checkout-shipping-info p {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #444;
 }
