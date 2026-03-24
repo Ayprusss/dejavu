@@ -1,5 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { API_URL } from '../../config/api';
+import { INDEX_IMAGES } from '../Index/Index';
 import './Navbar.css';
 
 const NAV_LINKS = [
@@ -18,12 +19,14 @@ function Navbar({
   stockistLinks = [],
   collectionsLinks = [],
   activeCollectionId = null,
+  activeIndexId = null,
   onNavigate,
   cartItemCount = 0,
   onOpenCart,
 }) {
   const [isStockistExpanded, setIsStockistExpanded] = useState(false);
   const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
+  const [isIndexExpanded, setIsIndexExpanded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Authentication State
@@ -127,9 +130,16 @@ function Navbar({
       return;
     }
 
+    if (page === 'index' && !hash) {
+      setIsIndexExpanded((prev) => !prev);
+      if (onNavigate) onNavigate(page);
+      return;
+    }
+
     if (page === 'account') {
       setIsStockistExpanded(false);
       setIsCollectionsExpanded(false);
+      setIsIndexExpanded(false);
       // Reset form mode when opening account panel
       setIsRegisterMode(false);
       setLoginError('');
@@ -139,7 +149,10 @@ function Navbar({
     }
 
     setIsStockistExpanded(false);
-    if (!hash) setIsCollectionsExpanded(false);
+    setIsIndexExpanded(false);
+    if (!hash) {
+      setIsCollectionsExpanded(false);
+    }
     setIsMobileMenuOpen(false);
     if (onNavigate) onNavigate(page, hash);
   };
@@ -198,7 +211,8 @@ function Navbar({
               currentPage === page ||
               (page === 'account' && isAccountOpen) ||
               (page === 'stockist' && isStockistExpanded) ||
-              (page === 'collections' && isCollectionsExpanded);
+              (page === 'collections' && isCollectionsExpanded) ||
+              (page === 'index' && isIndexExpanded);
 
             return (
               <div key={label} className="nav-item-container">
@@ -206,8 +220,13 @@ function Navbar({
                   href="#"
                   className={`nav-link-item${isActive ? ' is-active' : ''}`}
                   onClick={(event) => handleNavClick(event, page)}
-                  aria-expanded={(page === 'stockist' && isStockistExpanded) || (page === 'collections' && isCollectionsExpanded) || undefined}
-                  aria-controls={page === 'stockist' ? 'stockist-links' : (page === 'collections' ? 'collections-links' : undefined)}
+                  aria-expanded={(page === 'stockist' && isStockistExpanded) || (page === 'collections' && isCollectionsExpanded) || (page === 'index' && isIndexExpanded) || undefined}
+                  aria-controls={
+                    page === 'stockist' ? 'stockist-links' 
+                    : page === 'collections' ? 'collections-links' 
+                    : page === 'index' ? 'index-links'
+                    : undefined
+                  }
                 >
                   {label}
                 </a>
@@ -249,6 +268,27 @@ function Navbar({
                           onClick={(event) => handleNavClick(event, 'collections', `#collection-${id}`)}
                         >
                           {title}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {page === 'index' && INDEX_IMAGES.length > 0 ? (
+                  <div
+                    id="index-links"
+                    className={`stockist-wrapper${isIndexExpanded ? ' is-expanded' : ''}`}
+                    aria-hidden={!isIndexExpanded}
+                  >
+                    <div className="stockist-links" aria-label="Index links">
+                      {INDEX_IMAGES.map(({ id, label }) => (
+                        <a
+                          key={id}
+                          className={`stockist-link-item${activeIndexId === id ? ' is-active' : ''}`}
+                          href={`#index-${id}`}
+                          onClick={(event) => handleNavClick(event, 'index', `#index-${id}`)}
+                        >
+                          {label}
                         </a>
                       ))}
                     </div>
