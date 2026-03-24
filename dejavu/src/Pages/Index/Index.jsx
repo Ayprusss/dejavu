@@ -6,22 +6,22 @@ export const INDEX_IMAGES = [
   {
     id: "contrast-stitch",
     label: "Contrast Stitch Longsleeve Top + Grisaille Belt",
-    src: "/index/DSC5535_SnapseedCopy.webp"
+    src: "/Index/DSC5535_SnapseedCopy.webp"
   },
   {
     id: "everyday-bag",
     label: "Everyday bag",
-    src: "/index/everydayBag.webp"
+    src: "/Index/everydayBag.webp"
   },
   {
     id: "special-label",
     label: "Special Label",
-    src: "/index/Special_Label.webp"
+    src: "/Index/Special_Label.webp"
   },
   {
     id: "aw25-backstage",
     label: "AW25 Backstage shot of james and mohammed",
-    src: "/index/AW25_Backstage_shot_of_james_and_mohammed.webp"
+    src: "/Index/AW25_Backstage_shot_of_james_and_mohammed.webp"
   }
 ];
 
