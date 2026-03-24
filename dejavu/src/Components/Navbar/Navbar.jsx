@@ -38,7 +38,7 @@ function Navbar({
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setLoggedInUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch (e) {}
+      } catch (e) { }
     }
   }, []);
 
@@ -54,7 +54,7 @@ function Navbar({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed');
-      
+
       localStorage.setItem('adminToken', data.token);
       setLoggedInUser(data.user);
       setEmail('');
@@ -107,7 +107,7 @@ function Navbar({
           aria-label="Deja Vu home"
           onClick={(event) => handleNavClick(event, 'entry')}
         >
-          VUJA DÉ
+          DÉJA VU
         </a>
 
         <div className="mobile-actions">
@@ -220,27 +220,27 @@ function Navbar({
           {loggedInUser ? (
             <div className="account-form" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <p style={{ margin: 0, fontSize: '14px' }}>Welcome back!</p>
-              
-              <button 
-                type="button" 
-                className="account-login-button" 
+
+              <button
+                type="button"
+                className="account-login-button"
                 onClick={() => window.location.href = '/account'}
               >
                 My Account
               </button>
 
               {loggedInUser.isAdmin && (
-                <button 
-                  type="button" 
-                  className="account-login-button" 
+                <button
+                  type="button"
+                  className="account-login-button"
                   onClick={(e) => handleNavClick(e, 'admin')}
                 >
                   Admin Dashboard
                 </button>
               )}
-              <button  
-                type="button" 
-                className="account-login-button" 
+              <button
+                type="button"
+                className="account-login-button"
                 onClick={handleLogout}
                 style={{ background: 'transparent', color: '#000', border: '1px solid #000' }}
               >
