@@ -1,7 +1,7 @@
 const supabase = require("../supabase");
 const stripe = require("../../stripe");
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://dejavustudio.xyz";
 
 const createCheckout = async (req, res) => {
     try {
