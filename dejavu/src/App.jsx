@@ -15,6 +15,7 @@ import CheckoutSuccess from './Pages/Checkout/CheckoutSuccess';
 import CheckoutCancel from './Pages/Checkout/CheckoutCancel';
 import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
 import Collections from './Pages/Collections/Collections';
+import IndexPage from './Pages/Index/Index';
 import { COLLECTIONS_META } from './data/collectionsMeta';
 
 const INITIAL_CART_ITEMS = [];
@@ -75,6 +76,7 @@ function App() {
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [cartItems, setCartItems] = useState(INITIAL_CART_ITEMS);
   const [activeCollectionId, setActiveCollectionId] = useState(null);
+  const [activeIndexId, setActiveIndexId] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -197,6 +199,7 @@ function App() {
           stockistLinks={STOCKIST_LINKS}
           collectionsLinks={COLLECTIONS_META}
           activeCollectionId={activeCollectionId}
+          activeIndexId={activeIndexId}
           onNavigate={handleNavigate}
           cartItemCount={cartItemCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -227,7 +230,7 @@ function App() {
             element={<ShopItem key={location.pathname} onAddToCart={handleAddToCart} />}
           />
           <Route path="/collections" element={<Collections onActiveCollectionChange={setActiveCollectionId} />} />
-          <Route path="/index" element={<Entry />} />
+          <Route path="/index" element={<IndexPage onActiveIndexChange={setActiveIndexId} />} />
           <Route path="/stockist" element={<Entry />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
