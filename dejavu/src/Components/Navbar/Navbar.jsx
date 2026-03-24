@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { API_URL } from '../../config/api';
-import { INDEX_IMAGES } from '../Index/Index';
+import { INDEX_IMAGES } from '../../Pages/Index/Index.jsx';
 import './Navbar.css';
 
 const NAV_LINKS = [
@@ -93,7 +93,7 @@ function Navbar({
 
       // Successfully registered
       setRegisterSuccessMsg('Account Created! Logging you in...');
-      
+
       // Auto-login after brief delay so user can see the success message
       setTimeout(() => {
         localStorage.setItem('adminToken', data.token);
@@ -222,10 +222,10 @@ function Navbar({
                   onClick={(event) => handleNavClick(event, page)}
                   aria-expanded={(page === 'stockist' && isStockistExpanded) || (page === 'collections' && isCollectionsExpanded) || (page === 'index' && isIndexExpanded) || undefined}
                   aria-controls={
-                    page === 'stockist' ? 'stockist-links' 
-                    : page === 'collections' ? 'collections-links' 
-                    : page === 'index' ? 'index-links'
-                    : undefined
+                    page === 'stockist' ? 'stockist-links'
+                      : page === 'collections' ? 'collections-links'
+                        : page === 'index' ? 'index-links'
+                          : undefined
                   }
                 >
                   {label}
@@ -337,7 +337,7 @@ function Navbar({
             <form className="account-form" onSubmit={isRegisterMode ? handleRegister : handleLogin}>
               {loginError && <p style={{ color: '#eb5757', fontSize: '13px', margin: '0 0 10px' }}>{loginError}</p>}
               {registerSuccessMsg && <p style={{ color: '#27ae60', fontSize: '13px', margin: '0 0 10px', fontWeight: 'bold' }}>{registerSuccessMsg}</p>}
-              
+
               {isRegisterMode && (
                 <>
                   <label className="account-input-label" htmlFor="account-fname">
@@ -398,13 +398,13 @@ function Navbar({
 
               <div className="account-actions">
                 <button type="submit" className="account-login-button" disabled={isLoggingIn || isRegistering}>
-                  {isRegisterMode 
+                  {isRegisterMode
                     ? (isRegistering ? 'Creating account...' : 'Create account')
                     : (isLoggingIn ? 'Logging in...' : 'Login')}
                 </button>
-                
-                <button 
-                  type="button" 
+
+                <button
+                  type="button"
                   className="account-link-button"
                   onClick={() => {
                     setIsRegisterMode(!isRegisterMode);
@@ -414,7 +414,7 @@ function Navbar({
                 >
                   {isRegisterMode ? 'Back to login' : 'Create account'}
                 </button>
-                
+
                 {!isRegisterMode && (
                   <>
                     <span className="account-action-divider" aria-hidden="true" />
