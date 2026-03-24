@@ -26,10 +26,16 @@ function Navbar({
   const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Authentication State
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [registerSuccessMsg, setRegisterSuccessMsg] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
   const [loggedInUser, setLoggedInUser] = useState(null);
 
   useEffect(() => {
@@ -45,6 +51,7 @@ function Navbar({
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
+    setRegisterSuccessMsg('');
     setIsLoggingIn(true);
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -64,6 +71,41 @@ function Navbar({
       setLoginError(err.message);
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setRegisterSuccessMsg('');
+    setIsRegistering(true);
+    try {
+      const response = await fetch(`${API_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, firstName, lastName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Registration failed');
+
+      // Successfully registered
+      setRegisterSuccessMsg('Account Created! Logging you in...');
+      
+      // Auto-login after brief delay so user can see the success message
+      setTimeout(() => {
+        localStorage.setItem('adminToken', data.token);
+        setLoggedInUser(data.user);
+        setEmail('');
+        setPassword('');
+        setFirstName('');
+        setLastName('');
+        window.location.href = '/account';
+      }, 1500);
+
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -88,6 +130,10 @@ function Navbar({
     if (page === 'account') {
       setIsStockistExpanded(false);
       setIsCollectionsExpanded(false);
+      // Reset form mode when opening account panel
+      setIsRegisterMode(false);
+      setLoginError('');
+      setRegisterSuccessMsg('');
       if (onNavigate) onNavigate(page);
       return;
     }
@@ -248,8 +294,40 @@ function Navbar({
               </button>
             </div>
           ) : (
-            <form className="account-form" onSubmit={handleLogin}>
+            <form className="account-form" onSubmit={isRegisterMode ? handleRegister : handleLogin}>
               {loginError && <p style={{ color: '#eb5757', fontSize: '13px', margin: '0 0 10px' }}>{loginError}</p>}
+              {registerSuccessMsg && <p style={{ color: '#27ae60', fontSize: '13px', margin: '0 0 10px', fontWeight: 'bold' }}>{registerSuccessMsg}</p>}
+              
+              {isRegisterMode && (
+                <>
+                  <label className="account-input-label" htmlFor="account-fname">
+                    First Name
+                  </label>
+                  <input
+                    className="account-input"
+                    id="account-fname"
+                    name="firstName"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
+
+                  <label className="account-input-label" htmlFor="account-lname">
+                    Last Name
+                  </label>
+                  <input
+                    className="account-input"
+                    id="account-lname"
+                    name="lastName"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                  />
+                </>
+              )}
+
               <label className="account-input-label" htmlFor="account-email">
                 Email
               </label>
@@ -272,23 +350,39 @@ function Navbar({
                 id="account-password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={isRegisterMode ? "new-password" : "current-password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
 
               <div className="account-actions">
-                <button type="submit" className="account-login-button" disabled={isLoggingIn}>
-                  {isLoggingIn ? 'Logging in...' : 'Login'}
+                <button type="submit" className="account-login-button" disabled={isLoggingIn || isRegistering}>
+                  {isRegisterMode 
+                    ? (isRegistering ? 'Creating account...' : 'Create account')
+                    : (isLoggingIn ? 'Logging in...' : 'Login')}
                 </button>
-                <button type="button" className="account-link-button">
-                  Create account
+                
+                <button 
+                  type="button" 
+                  className="account-link-button"
+                  onClick={() => {
+                    setIsRegisterMode(!isRegisterMode);
+                    setLoginError('');
+                    setRegisterSuccessMsg('');
+                  }}
+                >
+                  {isRegisterMode ? 'Back to login' : 'Create account'}
                 </button>
-                <span className="account-action-divider" aria-hidden="true" />
-                <button type="button" className="account-link-button">
-                  Forgot?
-                </button>
+                
+                {!isRegisterMode && (
+                  <>
+                    <span className="account-action-divider" aria-hidden="true" />
+                    <button type="button" className="account-link-button">
+                      Forgot?
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           )}
