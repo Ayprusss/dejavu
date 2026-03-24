@@ -42,6 +42,23 @@ const register = async (req, res) => {
             throw newUserError;
         }
 
+        // Link any past guest orders to this newly created account
+        try {
+            const { error: linkOrdersError } = await supabase
+                .from("Order")
+                .update({ userId: newUser[0].id, updatedAt: new Date().toISOString() })
+                .eq("customerEmail", email)
+                .is("userId", null);
+
+            if (linkOrdersError) {
+                console.error("Failed to link existing guest orders to new user:", linkOrdersError);
+            } else {
+                console.log(`Successfully checked and linked past orders for ${email}`);
+            }
+        } catch (linkError) {
+            console.error("Exception while linking orders: ", linkError);
+        }
+
         const token = jwt.sign(
             { id: newUser[0].id, isAdmin: newUser[0].isAdmin },
             process.env.JWT_SECRET || 'super_secret_jwt_key',
