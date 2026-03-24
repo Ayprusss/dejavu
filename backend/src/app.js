@@ -10,6 +10,7 @@ const webhookRoutes = require('./routes/webhookRoutes');
 const app = express()
 app.use(cors({
   origin: [
+    'https://dejavustudio.xyz',
     'https://dejavu-ten.vercel.app',
     'http://localhost:5173'  // Vite dev server
   ],
