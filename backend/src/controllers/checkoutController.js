@@ -105,6 +105,8 @@ const createCheckout = async (req, res) => {
 
         return res.status(500).json({
             message: "Internal server error",
+            error: error.message,
+            stack: error.stack
         });
     }
 };
