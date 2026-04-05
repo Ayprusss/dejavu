@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How Dejavu Works — Interactive Course</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* === DESIGN SYSTEM === */
+    :root {
+      /* Colors */
+      --color-bg:             #FAF7F2;
+      --color-bg-warm:        #F5F0E8;
+      --color-bg-code:        #1E1E2E;
+      --color-text:           #2C2A28;
+      --color-text-secondary: #6B6560;
+      --color-text-muted:     #9E9790;
+      --color-border:         #E5DFD6;
+      --color-border-light:   #EEEBE5;
+      --color-surface:        #FFFFFF;
+      --color-surface-warm:   #FDF9F3;
+
+      --color-accent:         #D94F30;
+      --color-accent-hover:   #C4432A;
+      --color-accent-light:   #FDEEE9;
+      --color-accent-muted:   #E8836C;
+
+      --color-success:        #2D8B55;
+      --color-success-light:  #E8F5EE;
+      --color-error:          #C93B3B;
+      --color-error-light:    #FDE8E8;
+      --color-info:           #2A7B9B;
+      --color-info-light:     #E4F2F7;
+      --color-warning:        #D4A843;
+      --color-warning-light:  #FFF8E6;
+
+      --color-actor-1:        #D94F30;
+      --color-actor-2:        #2A7B9B;
+      --color-actor-3:        #7B6DAA;
+      --color-actor-4:        #D4A843;
+      --color-actor-5:        #2D8B55;
+
+      /* Typography */
+      --font-display:  'Bricolage Grotesque', Georgia, serif;
+      --font-body:     'DM Sans', -apple-system, sans-serif;
+      --font-mono:     'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+      --text-xs:   0.75rem;
+      --text-sm:   0.875rem;
+      --text-base: 1rem;
+      --text-lg:   1.125rem;
+      --text-xl:   1.25rem;
+      --text-2xl:  1.5rem;
+      --text-3xl:  1.875rem;
+      --text-4xl:  2.25rem;
+      --text-5xl:  3rem;
+      --text-6xl:  3.75rem;
+
+      --leading-tight:  1.15;
+      --leading-snug:   1.3;
+      --leading-normal: 1.6;
+      --leading-loose:  1.8;
+
+      /* Spacing */
+      --space-1:  0.25rem;
+      --space-2:  0.5rem;
+      --space-3:  0.75rem;
+      --space-4:  1rem;
+      --space-5:  1.25rem;
+      --space-6:  1.5rem;
+      --space-8:  2rem;
+      --space-10: 2.5rem;
+      --space-12: 3rem;
+      --space-16: 4rem;
+      --space-20: 5rem;
+      --space-24: 6rem;
+
+      --content-width:      800px;
+      --content-width-wide: 1000px;
+      --nav-height:         50px;
+
+      --radius-sm:   8px;
+      --radius-md:   12px;
+      --radius-lg:   16px;
+      --radius-full: 9999px;
+
+      /* Shadows */
+      --shadow-sm:  0 1px 2px rgba(44, 42, 40, 0.05);
+      --shadow-md:  0 4px 12px rgba(44, 42, 40, 0.08);
+      --shadow-lg:  0 8px 24px rgba(44, 42, 40, 0.1);
+      --shadow-xl:  0 16px 48px rgba(44, 42, 40, 0.12);
+
+      /* Animations */
+      --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+      --duration-fast:   150ms;
+      --duration-normal: 300ms;
+      --duration-slow:   500ms;
+      --stagger-delay:   120ms;
+    }
+
+    /* === GLOBAL RESETS === */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-snap-type: y proximity;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background: var(--color-bg);
+      background-image: radial-gradient(
+        ellipse at 20% 50%,
+        rgba(217, 79, 48, 0.03) 0%,
+        transparent 50%
+      );
+      line-height: var(--leading-normal);
+      overflow-x: hidden;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--color-border);
+      border-radius: var(--radius-full);
+    }
+
+    /* === NAVIGATION === */
+    .nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: var(--nav-height);
+      background: rgba(250, 247, 242, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--color-border-light);
+      z-index: 1000;
+    }
+
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: var(--color-accent);
+      width: 0%;
+      transition: width 100ms linear;
+    }
+
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+    }
+
+    .nav-title {
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: var(--text-lg);
+      color: var(--color-text);
+    }
+
+    .nav-dots {
+      display: flex;
+      gap: var(--space-3);
+      align-items: center;
+    }
+
+    .nav-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid var(--color-text-muted);
+      background: transparent;
+      cursor: pointer;
+      transition: all var(--duration-normal) var(--ease-out);
+      position: relative;
+    }
+
+    .nav-dot:hover {
+      border-color: var(--color-accent);
+      transform: scale(1.15);
+    }
+
+    .nav-dot.active {
+      border-color: var(--color-accent);
+      background: var(--color-accent);
+      box-shadow: 0 0 0 4px rgba(217, 79, 48, 0.15);
+    }
+
+    .nav-dot.visited {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+    }
+
+    /* Tooltip for nav dots */
+    .nav-dot::before {
+      content: attr(data-tooltip);
+      position: fixed;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: var(--color-text);
+      color: white;
+      padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-xs);
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-fast);
+    }
+
+    .nav-dot:hover::before {
+      opacity: 1;
+    }
+
+    /* === MODULE STRUCTURE === */
+    .module {
+      min-height: 100vh;
+      min-height: 100dvh;
+      scroll-snap-align: start;
+      padding: var(--space-16) var(--space-6);
+      padding-top: calc(var(--nav-height) + var(--space-16));
+    }
+
+    .module-content {
+      max-width: var(--content-width);
+      margin: 0 auto;
+    }
+
+    .module-header {
+      margin-bottom: var(--space-12);
+    }
+
+    .module-number {
+      font-family: var(--font-display);
+      font-size: var(--text-6xl);
+      font-weight: 800;
+      color: var(--color-accent);
+      opacity: 0.15;
+      line-height: 1;
+      display: block;
+      margin-bottom: var(--space-4);
+    }
+
+    .module-title {
+      font-family: var(--font-display);
+      font-size: var(--text-4xl);
+      font-weight: 700;
+      line-height: var(--leading-tight);
+      margin-bottom: var(--space-4);
+    }
+
+    .module-subtitle {
+      font-size: var(--text-lg);
+      color: var(--color-text-secondary);
+      line-height: var(--leading-snug);
+    }
+
+    .module-body {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-12);
+    }
+
+    .screen {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-6);
+    }
+
+    .screen-heading {
+      font-family: var(--font-display);
+      font-size: var(--text-2xl);
+      font-weight: 600;
+      line-height: var(--leading-snug);
+    }
+
+    .screen p {
+      font-size: var(--text-base);
+      line-height: var(--leading-normal);
+      color: var(--color-text);
+    }
+
+    /* === ANIMATIONS === */
+    .animate-in {
+      opacity: 0;
+      transform: translateY(20px);
+      transition: opacity var(--duration-slow) var(--ease-out),
+                  transform var(--duration-slow) var(--ease-out);
+    }
+
+    .animate-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .stagger-children > .animate-in {
+      transition-delay: calc(var(--stagger-index, 0) * var(--stagger-delay));
+    }
+
+    /* === CODE BLOCKS === */
+    pre, code {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: hidden;
+    }
+
+    .translation-code::-webkit-scrollbar,
+    pre::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* === SYNTAX HIGHLIGHTING === */
+    .code-keyword  { color: #CBA6F7; }
+    .code-string   { color: #A6E3A1; }
+    .code-function { color: #89B4FA; }
+    .code-comment  { color: #6C7086; }
+    .code-number   { color: #FAB387; }
+    .code-property { color: #F9E2AF; }
+    .code-operator { color: #94E2D5; }
+    .code-tag      { color: #F38BA8; }
+    .code-attr     { color: #F9E2AF; }
+    .code-value    { color: #A6E3A1; }
+
+    /* === GLOSSARY TOOLTIPS === */
+    .term {
+      text-decoration: underline;
+      text-decoration-style: dashed;
+      text-decoration-color: var(--color-accent-muted);
+      cursor: pointer;
+      position: relative;
+    }
+
+    .tooltip {
+      position: fixed;
+      background: var(--color-text);
+      color: white;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-sm);
+      font-size: var(--text-sm);
+      max-width: 300px;
+      line-height: var(--leading-normal);
+      z-index: 2000;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity var(--duration-fast);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .tooltip.show {
+      opacity: 1;
+    }
+
+    /* === PATTERN CARDS === */
+    .pattern-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-md);
+    }
+
+    /* === CHAT ANIMATIONS === */
+    @keyframes fadeSlideUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes typingBounce {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+
+    /* === RESPONSIVE === */
+    @media (max-width: 768px) {
+      :root {
+        --text-4xl: 1.875rem;
+        --text-5xl: 2.25rem;
+        --text-6xl: 3rem;
+      }
+
+      .module {
+        padding: var(--space-8) var(--space-4);
+        padding-top: calc(var(--nav-height) + var(--space-8));
+      }
+
+      .nav-title {
+        font-size: var(--text-base);
+      }
+
+      .nav-dots {
+        gap: var(--space-2);
+      }
+
+      .nav-dot {
+        width: 10px;
+        height: 10px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      :root {
+        --text-4xl: 1.5rem;
+        --text-5xl: 1.875rem;
+        --text-6xl: 2.25rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="nav">
+    <div class="progress-bar" role="progressbar" aria-valuenow="0"></div>
+    <div class="nav-inner">
+      <span class="nav-title">How Dejavu Works</span>
+      <div class="nav-dots">
+        <button class="nav-dot active" data-target="module-1" data-tooltip="Click 'Buy'" role="tab" aria-label="Module 1"></button>
+        <button class="nav-dot" data-target="module-2" data-tooltip="Meet the Cast" role="tab" aria-label="Module 2"></button>
+        <button class="nav-dot" data-target="module-3" data-tooltip="Product Catalog" role="tab" aria-label="Module 3"></button>
+        <button class="nav-dot" data-target="module-4" data-tooltip="Shopping Cart" role="tab" aria-label="Module 4"></button>
+        <button class="nav-dot" data-target="module-5" data-tooltip="Taking Payment" role="tab" aria-label="Module 5"></button>
+        <button class="nav-dot" data-target="module-6" data-tooltip="Secret Handshake" role="tab" aria-label="Module 6"></button>
+        <button class="nav-dot" data-target="module-7" data-tooltip="When Things Break" role="tab" aria-label="Module 7"></button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Module 1 -->
+  <section class="module" id="module-1" style="background: var(--color-bg);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">01</span>
+        <h1 class="module-title">Click "Buy" — What Happens Next?</h1>
+        <p class="module-subtitle">Follow a single purchase from button click to order confirmation</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: What is Dejavu -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Meet Dejavu</h2>
+          <p><strong>Dejavu</strong> is an online fashion store. It's a full-stack
+            <span class="term" data-definition="A web application is a program that runs in your browser, like Gmail or Netflix. 'Full-stack' means it has both a frontend (the part you see) and a backend (the server doing work behind the scenes).">web application</span>
+            where customers browse clothing, add items to their cart, and check out with a credit card.</p>
+          <p>Think of it like any online store you've used — but simpler. No recommendations engine, no social features, just the core: <strong>show products → let people buy them → collect payment</strong>.</p>
+          <p>In this course, you'll trace exactly what happens when someone clicks "Add to Cart" on a jacket. You'll see how five different parts of the system talk to each other to turn that click into a confirmed order and a charge on their credit card.</p>
+        </section>
+
+        <!-- Screen 2: The User Journey -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Journey We'll Trace</h2>
+          <p>Here's the path a customer takes through the store:</p>
+
+          <div class="flow-steps" style="display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; margin: var(--space-8) 0;">
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">1</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">Browse products on the shop page</p>
+            </div>
+            <div class="flow-arrow" style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">2</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">Click a product to see details and sizes</p>
+            </div>
+            <div class="flow-arrow" style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">3</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">Select size, click "Add to Cart"</p>
+            </div>
+            <div class="flow-arrow" style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">4</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">Review cart, click "Checkout"</p>
+            </div>
+            <div class="flow-arrow" style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-accent); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">5</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">Enter credit card on secure payment page</p>
+            </div>
+            <div class="flow-arrow" style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+            <div class="flow-step" style="background: var(--color-surface); padding: var(--space-4); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); flex: 1; min-width: 140px;">
+              <div class="flow-step-num" style="width: 32px; height: 32px; border-radius: 50%; background: var(--color-success); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: var(--space-2);">✓</div>
+              <p style="font-size: var(--text-sm); line-height: var(--leading-snug); margin: 0;">See "Order Complete!" confirmation</p>
+            </div>
+          </div>
+
+          <p>Simple, right? But under the hood, <strong>five different components</strong> are coordinating to make this happen. Each one has a specific job, and they talk to each other in a very specific order.</p>
+        </section>
+
+        <!-- Screen 3: What Happens Under the Hood -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">What's Really Happening Behind the Scenes</h2>
+          <p>When you click "Add to Cart," here's the chain reaction that follows:</p>
+
+          <div class="pattern-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); margin: var(--space-8) 0;">
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-1); transition: transform 0.3s, box-shadow 0.3s;">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-1); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3);">🖥️</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Your Browser Reacts</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The item gets added to a list stored in your browser's memory. No internet request yet!</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-2); transition: transform 0.3s, box-shadow 0.3s;">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3);">📦</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Server Checks Stock</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">When you click "Checkout," the backend verifies there's enough inventory before charging you.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-3); transition: transform 0.3s, box-shadow 0.3s;">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3);">🗄️</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Database Confirms Stock</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The server asks the database: "How many Medium jackets do we have left?" Database responds with the count.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-4); transition: transform 0.3s, box-shadow 0.3s;">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3);">💳</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Stripe Takes Payment</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">You're redirected to Stripe's secure page to enter your credit card. Dejavu never sees your card number.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-5); transition: transform 0.3s, box-shadow 0.3s;">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-5); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3);">🔔</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Webhook Confirms Order</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">After payment succeeds, Stripe calls back to the server: "Hey, they paid!" The server creates an order and decrements stock.</p>
+            </div>
+          </div>
+
+          <div class="callout callout-accent" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-accent-light); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); margin: var(--space-8) 0;">
+            <div class="callout-icon" style="font-size: var(--text-3xl);">💡</div>
+            <div class="callout-content">
+              <strong class="callout-title" style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">Why This Matters for You</strong>
+              <p style="margin: 0;">Understanding this flow helps you <strong>debug problems faster</strong>. If a user says "I clicked checkout but nothing happened," you now know to check: Did the frontend send the request? Did the backend receive it? Did stock validation pass? Did Stripe respond? Each step has a specific place in the chain.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen 4: Preview of What's Coming -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">What You'll Learn in This Course</h2>
+          <p>Over the next six modules, we'll zoom into each part of this system:</p>
+
+          <div style="display: flex; flex-direction: column; gap: var(--space-4); margin: var(--space-8) 0;">
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-actor-1); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">2</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">Meet the Cast</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The five main components and what each one does</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">3</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">The Product Catalog</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">How products, variants, and inventory work in the database</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">4</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">The Shopping Cart Magic</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">Why your cart lives in your browser, not the database (until checkout)</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">5</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">Taking Their Money</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">How Stripe handles payment processing (and why you never touch credit card numbers)</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-actor-5); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">6</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">The Secret Handshake</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">Webhooks — the "reverse API" that lets Stripe tell your server when payment completes</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface-warm); border-radius: var(--radius-md);">
+              <div style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 50%; background: var(--color-error); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-family: var(--font-display);">7</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">When Things Break</h4>
+                <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">Common failure modes and how to debug them</p>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin-top: var(--space-8);">Ready? Let's meet the team.</p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 2 -->
+  <section class="module" id="module-2" style="background: var(--color-bg-warm);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">02</span>
+        <h1 class="module-title">Meet the Cast</h1>
+        <p class="module-subtitle">The five components that make Dejavu work, and what each one does</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: Introducing the actors -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Five Main Characters</h2>
+          <p>Every e-commerce store needs these five roles. Think of them as a team where each member has a specific job:</p>
+
+          <div class="pattern-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); margin: var(--space-8) 0;">
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-1);">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-1); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3); font-weight: 700; font-family: var(--font-display);">F</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Frontend</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The UI you see and click. Built with <span class="term" data-definition="React is a JavaScript library for building user interfaces. It's like a toolkit that makes it easier to create interactive web pages — buttons that respond to clicks, forms that validate input, etc.">React</span>. Runs in your browser.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-2);">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3); font-weight: 700; font-family: var(--font-display);">B</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Backend</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The business logic server. Built with <span class="term" data-definition="Node.js is JavaScript running on a server instead of in a browser. It lets you write server-side code in the same language you use for frontend code. Express is a framework that makes it easier to build web servers with Node.js.">Node.js + Express</span>. Validates requests, checks stock, creates checkout sessions.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-3);">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3); font-weight: 700; font-family: var(--font-display);">D</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Database</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The long-term memory. Uses <span class="term" data-definition="Supabase is a service that provides a database and tools to interact with it. It's built on Postgres, which is a type of database that stores information in tables (like a spreadsheet with rows and columns).">Supabase (Postgres)</span>. Stores products, variants, stock, orders, users.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-4);">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3); font-weight: 700; font-family: var(--font-display);">S</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Stripe</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The payment processor. Handles credit cards securely. You never touch card numbers — Stripe does all the heavy lifting.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-5);">
+              <div class="pattern-icon" style="width: 48px; height: 48px; border-radius: 50%; background: var(--color-actor-5); color: white; display: flex; align-items: center; justify-content: center; font-size: var(--text-2xl); margin-bottom: var(--space-3); font-weight: 700; font-family: var(--font-display);">W</div>
+              <h4 class="pattern-title" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Webhook</h4>
+              <p class="pattern-desc" style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">The callback listener. When payment completes, Stripe calls <em>your</em> server with the news. Then you create the order.</p>
+            </div>
+          </div>
+
+          <div class="callout callout-accent" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-accent-light); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); margin: var(--space-8) 0;">
+            <div class="callout-icon" style="font-size: var(--text-3xl);">💡</div>
+            <div class="callout-content">
+              <strong class="callout-title" style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">Separation of Concerns</strong>
+              <p style="margin: 0;">This pattern — splitting responsibilities into focused roles — is one of the most important ideas in software engineering. Engineers call it <strong>"separation of concerns."</strong> Each component does <em>one thing well</em>, which makes the system easier to debug, test, and change. If the payment processor breaks, you know exactly where to look.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen 2: Group Chat Animation -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Watch Them Talk</h2>
+          <p>Here's how these five components communicate during a typical purchase. Click "Next Message" to see each step:</p>
+
+          <div class="chat-window" style="background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: var(--space-6); margin: var(--space-8) 0;">
+            <div class="chat-messages" id="chat-messages-m2" style="display: flex; flex-direction: column; gap: var(--space-4); min-height: 300px;">
+
+              <div class="chat-message" data-msg="0" data-sender="frontend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3); animation: fadeSlideUp 0.3s var(--ease-out);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-1); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">F</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-1); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Frontend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">User just clicked "Checkout" with 2 items in their cart!</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="1" data-sender="backend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">B</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-2); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Backend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Got it! Let me verify stock levels before we charge them.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="2" data-sender="backend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">B</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-2); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Backend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Hey Database, do we have stock for variant IDs abc-123 and def-456?</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="3" data-sender="database" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">D</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-3); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Database</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Yes! abc-123 has 5 left, def-456 has 12 left. You're good to go.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="4" data-sender="backend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">B</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-2); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Backend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Perfect! Stripe, please create a checkout session for $198.50.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="5" data-sender="stripe" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">S</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-4); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Stripe</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Done! Here's the checkout URL. Send the user to me.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="6" data-sender="frontend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-1); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">F</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-1); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Frontend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Redirecting user to Stripe's payment page now...</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="7" data-sender="stripe" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">S</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-4); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Stripe</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">[User enters card info and clicks Pay]</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="8" data-sender="stripe" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-4); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">S</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-4); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Stripe</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Payment succeeded! Webhook, tell Backend the good news.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="9" data-sender="webhook" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-5); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">W</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-5); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Webhook</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Hey Backend! Payment complete for session xyz-789. Create the order!</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="10" data-sender="backend" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-2); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">B</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-2); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Backend</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">Database, create Order record and decrement stock by 1 for each variant.</p>
+                </div>
+              </div>
+
+              <div class="chat-message" data-msg="11" data-sender="database" style="display:none; flex-direction: row; align-items: flex-start; gap: var(--space-3);">
+                <div class="chat-avatar" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">D</div>
+                <div class="chat-bubble" style="background: var(--color-surface-warm); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); max-width: 70%;">
+                  <span class="chat-sender" style="color: var(--color-actor-3); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: var(--space-1);">Database</span>
+                  <p style="margin: 0; font-size: var(--text-sm);">✓ Order created. Stock updated. We're all done!</p>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="chat-typing" id="chat-typing-m2" style="display:none; flex-direction: row; align-items: center; gap: var(--space-3); margin-top: var(--space-4);">
+              <div class="chat-avatar" id="typing-avatar-m2" style="width: 36px; height: 36px; border-radius: 50%; background: var(--color-text-muted); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--text-sm); flex-shrink: 0;">?</div>
+              <div class="chat-typing-dots" style="display: flex; gap: var(--space-2);">
+                <span class="typing-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); animation: typingBounce 1.4s infinite;"></span>
+                <span class="typing-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); animation: typingBounce 1.4s infinite; animation-delay: 0.2s;"></span>
+                <span class="typing-dot" style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-text-muted); animation: typingBounce 1.4s infinite; animation-delay: 0.4s;"></span>
+              </div>
+            </div>
+
+            <div class="chat-controls" style="display: flex; gap: var(--space-3); align-items: center; margin-top: var(--space-6); padding-top: var(--space-4); border-top: 1px solid var(--color-border-light);">
+              <button onclick="playChatNext('m2')" style="padding: var(--space-2) var(--space-4); background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); font-family: var(--font-body); font-weight: 600; cursor: pointer; font-size: var(--text-sm); transition: background var(--duration-fast);">Next Message</button>
+              <button onclick="playChatAll('m2')" style="padding: var(--space-2) var(--space-4); background: var(--color-surface-warm); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: var(--font-body); font-weight: 600; cursor: pointer; font-size: var(--text-sm); transition: background var(--duration-fast);">Play All</button>
+              <button onclick="resetChat('m2')" style="padding: var(--space-2) var(--space-4); background: var(--color-surface-warm); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: var(--font-body); font-weight: 600; cursor: pointer; font-size: var(--text-sm); transition: background var(--duration-fast);">Replay</button>
+              <span class="chat-progress" id="chat-progress-m2" style="margin-left: auto; font-size: var(--text-sm); color: var(--color-text-muted);">0 / 12 messages</span>
+            </div>
+          </div>
+
+          <p>Notice how each component has a <strong>specific job</strong> and only talks to the components it needs to. Frontend never talks directly to Database — it always goes through Backend. That's intentional!</p>
+        </section>
+
+        <!-- Screen 3: Why this structure -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Why This Structure Matters for You</h2>
+          <p>Understanding who does what helps you in three practical ways:</p>
+
+          <div style="display: flex; flex-direction: column; gap: var(--space-4); margin: var(--space-6) 0;">
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-info);">
+              <div style="font-size: var(--text-3xl);">🐛</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-2);">Debugging</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">User says "my cart shows 2 items but checkout says 1" — you know to check the handoff between Frontend (cart state) and Backend (checkout validation).</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-info);">
+              <div style="font-size: var(--text-3xl);">🤖</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-2);">Steering AI</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">Instead of saying "make it calculate tax," you can say "add tax calculation to the Backend checkout controller before we create the Stripe session." Much more precise.</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-4); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-info);">
+              <div style="font-size: var(--text-3xl);">🏗️</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-2);">Architectural Decisions</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">Should "recently viewed items" live in the Frontend (browser memory) or Database? You can now reason about tradeoffs — Frontend is fast but gets wiped when you close the tab; Database persists but requires a network call.</p>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 3 -->
+  <section class="module" id="module-3" style="background: var(--color-bg);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">03</span>
+        <h1 class="module-title">The Product Catalog</h1>
+        <p class="module-subtitle">How products, sizes, and inventory live in the database</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: The Database Structure -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Two Tables Work Together</h2>
+          <p>The store doesn't just have "products" — it has <strong>products with sizes</strong>. A single jacket might come in Small, Medium, and Large. Each size has its own stock count.</p>
+          <p>To handle this, the database uses two tables:</p>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6); margin: var(--space-8) 0;">
+            <div style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-3);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4); color: var(--color-actor-3);">Product Table</h4>
+              <div style="font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; flex-direction: column; gap: var(--space-2);">
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-3);">id</code>
+                  <span>Unique ID</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-3);">name</code>
+                  <span>"Cargo Jacket"</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-3);">price</code>
+                  <span>99.50</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-3);">images</code>
+                  <span>Array of URLs</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-3);">description</code>
+                  <span>JSON text</span>
+                </div>
+              </div>
+              <p style="margin-top: var(--space-4); font-size: var(--text-sm); color: var(--color-text-muted); font-style: italic;">The general info: what it is, what it costs, what it looks like.</p>
+            </div>
+
+            <div style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-actor-4);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4); color: var(--color-actor-4);">ProductVariant Table</h4>
+              <div style="font-size: var(--text-sm); color: var(--color-text-secondary); display: flex; flex-direction: column; gap: var(--space-2);">
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-4);">id</code>
+                  <span>Unique ID</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-4);">productId</code>
+                  <span>Links to Product</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-4);">size</code>
+                  <span>"Medium"</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-4);">stock</code>
+                  <span>7</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding: var(--space-2); background: var(--color-surface-warm); border-radius: var(--radius-sm);">
+                  <code style="font-family: var(--font-mono); color: var(--color-actor-4);">stripeProductId</code>
+                  <span>For payment</span>
+                </div>
+              </div>
+              <p style="margin-top: var(--space-4); font-size: var(--text-sm); color: var(--color-text-muted); font-style: italic;">The specific details: which size, how many left, payment ID.</p>
+            </div>
+          </div>
+
+          <p>Think of it like a family tree: one Product (the parent) has multiple ProductVariants (the children). The Cargo Jacket is one product, but it has three variants: Small, Medium, Large.</p>
+
+          <div class="callout callout-accent" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-accent-light); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); margin: var(--space-8) 0;">
+            <div class="callout-icon" style="font-size: var(--text-3xl);">💡</div>
+            <div class="callout-content">
+              <strong class="callout-title" style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">SKU is Just a Fancy Word for Variant</strong>
+              <p style="margin: 0;">In retail, people call these
+                <span class="term" data-definition="SKU stands for 'Stock Keeping Unit' — it's a unique identifier for each specific sellable item. A red shirt in size Medium is a different SKU than the same red shirt in size Large, because they're tracked separately in inventory.">SKUs (Stock Keeping Units)</span>.
+                It's the same concept: a Product is the general item ("Cargo Jacket"), and each SKU/Variant is a specific sellable version ("Cargo Jacket, Medium"). When you tell AI to "add SKU tracking," you now know what that means!</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen 2: Code Translation -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">How the Code Fetches Product Details</h2>
+          <p>When you click on a product, the frontend asks the backend: "Give me all info for product X, including all available sizes." Here's the exact code that runs:</p>
+
+          <div class="translation-block" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); margin: var(--space-8) 0;">
+            <div class="translation-code" style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7; position: relative; overflow-x: hidden;">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5;">CODE</span>
+              <pre style="margin: 0; white-space: pre-wrap; word-break: break-word; overflow-x: hidden;"><code><span class="code-line"><span class="code-keyword">let</span> query = supabase</span>
+<span class="code-line">  .<span class="code-function">from</span>(<span class="code-string">"Product"</span>)</span>
+<span class="code-line">  .<span class="code-function">select</span>(<span class="code-string">"*, ProductVariant (*)"</span>)</span>
+<span class="code-line">  .<span class="code-function">eq</span>(<span class="code-string">"id"</span>, productId)</span>
+<span class="code-line">  .<span class="code-function">single</span>();</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">const</span> { data, error } = <span class="code-keyword">await</span> query;</span></code></pre>
+            </div>
+            <div class="translation-english" style="background: var(--color-surface-warm); padding: var(--space-6); font-size: var(--text-sm); line-height: 1.7; border-left: 3px solid var(--color-accent);">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5; color: var(--color-text-muted);">PLAIN ENGLISH</span>
+              <div class="translation-lines" style="margin-top: var(--space-4);">
+                <p style="margin: 0 0 var(--space-3) 0;">Start building a database query...</p>
+                <p style="margin: 0 0 var(--space-3) 0;">Look in the "Product" table...</p>
+                <p style="margin: 0 0 var(--space-3) 0;">Give me everything (*) from Product, <em>plus</em> all related rows from ProductVariant...</p>
+                <p style="margin: 0 0 var(--space-3) 0;">But only for the product where the ID matches this specific one...</p>
+                <p style="margin: 0 0 var(--space-3) 0;">And I'm expecting exactly one result (not an array).</p>
+                <p style="margin: 0 0 var(--space-3) 0;"></p>
+                <p style="margin: 0;">Now actually send that query and wait for the answer.</p>
+              </div>
+            </div>
+          </div>
+
+          <p>The key line is <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #CBA6F7; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">"*, ProductVariant (*)"</code> — that's a
+            <span class="term" data-definition="A JOIN is when you combine data from two tables. Instead of making two separate requests (one for the product, one for its sizes), you ask the database to stitch them together for you in a single response.">JOIN</span>
+            in disguise. It says "give me the Product data, and also grab all the ProductVariant rows that belong to it."</p>
+
+          <p>The response looks like this:</p>
+
+          <div style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-5); border-radius: var(--radius-md); font-family: var(--font-mono); font-size: var(--text-sm); margin: var(--space-6) 0; overflow-x: hidden;">
+            <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;"><code>{
+  <span class="code-property">id</span>: <span class="code-string">"abc-123"</span>,
+  <span class="code-property">name</span>: <span class="code-string">"Cargo Jacket"</span>,
+  <span class="code-property">price</span>: <span class="code-number">99.50</span>,
+  <span class="code-property">ProductVariant</span>: [
+    { <span class="code-property">id</span>: <span class="code-string">"v1"</span>, <span class="code-property">size</span>: <span class="code-string">"Small"</span>, <span class="code-property">stock</span>: <span class="code-number">3</span> },
+    { <span class="code-property">id</span>: <span class="code-string">"v2"</span>, <span class="code-property">size</span>: <span class="code-string">"Medium"</span>, <span class="code-property">stock</span>: <span class="code-number">7</span> },
+    { <span class="code-property">id</span>: <span class="code-string">"v3"</span>, <span class="code-property">size</span>: <span class="code-string">"Large"</span>, <span class="code-property">stock</span>: <span class="code-number">0</span> }
+  ]
+}</code></pre>
+          </div>
+
+          <p>See how the <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #CBA6F7; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">ProductVariant</code> field contains an <strong>array</strong> of all the sizes? That's the JOIN at work — one query, all the data you need.</p>
+        </section>
+
+        <!-- Screen 3: Quiz -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Test Your Understanding</h2>
+
+          <div class="quiz-container" style="margin: var(--space-8) 0;">
+            <div class="quiz-question-block" data-question="q3-1" data-correct="option-b" style="margin-bottom: var(--space-6);">
+              <h3 class="quiz-question" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4);">A user wants to add "Cargo Jacket, Medium" to their cart. Which piece of data does the backend need to check stock?</h3>
+              <div class="quiz-options" style="display: flex; flex-direction: column; gap: var(--space-3);">
+                <button class="quiz-option" data-value="option-a" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>The Product ID (e.g., "abc-123")</span>
+                </button>
+                <button class="quiz-option" data-value="option-b" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>The ProductVariant ID (e.g., "v2" for Medium)</span>
+                </button>
+                <button class="quiz-option" data-value="option-c" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>Just the product name ("Cargo Jacket")</span>
+                </button>
+              </div>
+              <div class="quiz-feedback" id="q3-1-feedback" style="max-height: 0; overflow: hidden; opacity: 0; transition: all 0.3s;"></div>
+            </div>
+
+            <div class="quiz-question-block" data-question="q3-2" data-correct="option-c" style="margin-bottom: var(--space-6);">
+              <h3 class="quiz-question" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4);">Why split Product and ProductVariant into two tables instead of one big table?</h3>
+              <div class="quiz-options" style="display: flex; flex-direction: column; gap: var(--space-3);">
+                <button class="quiz-option" data-value="option-a" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>It's faster to query two tables than one</span>
+                </button>
+                <button class="quiz-option" data-value="option-b" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>Supabase requires it</span>
+                </button>
+                <button class="quiz-option" data-value="option-c" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm); transition: all 0.2s;">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); transition: all 0.2s; flex-shrink: 0;"></div>
+                  <span>Avoids repeating product info (name, price, images) for every size</span>
+                </button>
+              </div>
+              <div class="quiz-feedback" id="q3-2-feedback" style="max-height: 0; overflow: hidden; opacity: 0; transition: all 0.3s;"></div>
+            </div>
+
+            <button class="quiz-check-btn" onclick="checkQuiz('module-3')" style="padding: var(--space-3) var(--space-5); background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); font-family: var(--font-display); font-weight: 600; cursor: pointer; font-size: var(--text-base); transition: background 0.2s; margin-right: var(--space-3);">Check Answers</button>
+            <button class="quiz-reset-btn" onclick="resetQuiz('module-3')" style="padding: var(--space-3) var(--space-5); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: var(--font-display); font-weight: 600; cursor: pointer; font-size: var(--text-base); transition: background 0.2s;">Reset</button>
+          </div>
+
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 4 -->
+  <section class="module" id="module-4" style="background: var(--color-bg-warm);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">04</span>
+        <h1 class="module-title">The Shopping Cart Magic</h1>
+        <p class="module-subtitle">Why your cart lives in your browser, not the database</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: Local vs Server State -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Cart Lives in Your Browser's Memory</h2>
+          <p>When you click "Add to Cart," the item doesn't immediately go to the database. Instead, it's stored in
+            <span class="term" data-definition="React state is a place where components store information that can change. When state changes, React automatically re-renders the component to show the new data. Think of it like a notebook where you jot down temporary info — when you update the notebook, you see the changes instantly.">React state</span>
+            — basically, a variable in your browser's memory.</p>
+
+          <p>Here's why:</p>
+
+          <div class="pattern-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); margin: var(--space-8) 0;">
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-success);">
+              <div style="font-size: var(--text-3xl); margin-bottom: var(--space-3);">⚡</div>
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Instant Feedback</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">No waiting for a server round-trip. Click "Add" and the cart updates immediately.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-success);">
+              <div style="font-size: var(--text-3xl); margin-bottom: var(--space-3);">💾</div>
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">No Database Clutter</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">People add/remove items constantly. If every cart change hit the database, you'd store thousands of abandoned carts.</p>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-success);">
+              <div style="font-size: var(--text-3xl); margin-bottom: var(--space-3);">🔒</div>
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-2);">Privacy</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin: 0;">Your cart is yours until you checkout. No tracking, no "items in cart" analytics.</p>
+            </div>
+          </div>
+
+          <div class="callout callout-accent" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-accent-light); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); margin: var(--space-8) 0;">
+            <div class="callout-icon" style="font-size: var(--text-3xl);">💡</div>
+            <div class="callout-content">
+              <strong class="callout-title" style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">The Tradeoff</strong>
+              <p style="margin: 0;">Close the browser tab and your cart is gone. That's the cost of keeping it local. Big e-commerce sites (Amazon, Target) store carts in the database so they persist across devices — but they also have the infrastructure to handle millions of cart operations per second. For a small store, local state is simpler and faster.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen 2: Code Translation -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Add-to-Cart Code</h2>
+          <p>Here's the function that runs when you click "Add to Cart":</p>
+
+          <div class="translation-block" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); margin: var(--space-8) 0;">
+            <div class="translation-code" style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7; overflow-x: hidden;">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5;">CODE</span>
+              <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;"><code><span class="code-keyword">const</span> <span class="code-function">handleAddToCart</span> = (item) => {
+  <span class="code-function">setCartItems</span>((prev) => {
+    <span class="code-keyword">const</span> existing = prev.<span class="code-function">find</span>(
+      (i) => i.id === item.id
+    );
+
+    <span class="code-keyword">if</span> (existing) {
+      <span class="code-keyword">return</span> prev.<span class="code-function">map</span>((i) =>
+        i.id === item.id
+          ? { ...i, <span class="code-property">quantity</span>: i.quantity + <span class="code-number">1</span> }
+          : i
+      );
+    }
+
+    <span class="code-keyword">return</span> [...prev, { ...item, <span class="code-property">quantity</span>: <span class="code-number">1</span> }];
+  });
+};</code></pre>
+            </div>
+            <div class="translation-english" style="background: var(--color-surface-warm); padding: var(--space-6); font-size: var(--text-sm); line-height: 1.7; border-left: 3px solid var(--color-accent);">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5; color: var(--color-text-muted);">PLAIN ENGLISH</span>
+              <div style="margin-top: var(--space-4);">
+                <p style="margin: 0 0 var(--space-2) 0;">This function runs when the button is clicked...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Update the cart by looking at the current cart items...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Check if this item is already in the cart...</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;">If yes, bump the quantity by 1...</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0;">If no, add it as a new item with quantity 1.</p>
+              </div>
+            </div>
+          </div>
+
+          <p>Notice it never calls <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #89B4FA; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">fetch()</code> to talk to the server. It just updates local state. The database only gets involved when you click "Checkout."</p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 5 -->
+  <section class="module" id="module-5" style="background: var(--color-bg);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">05</span>
+        <h1 class="module-title">Taking Their Money</h1>
+        <p class="module-subtitle">How Stripe handles payment processing securely</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: Why Stripe -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Why You Never Touch Credit Card Numbers</h2>
+          <p>When the user clicks "Checkout," Dejavu doesn't ask for their credit card. Instead, it <strong>redirects them to Stripe</strong> — a separate company whose entire business is processing payments securely.</p>
+
+          <p>Here's why:</p>
+
+          <div class="callout" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-error-light); border-left: 4px solid var(--color-error); border-radius: var(--radius-md); margin: var(--space-6) 0;">
+            <div style="font-size: var(--text-3xl);">⚠️</div>
+            <div>
+              <strong style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">Handling Credit Cards is a Legal Minefield</strong>
+              <p style="margin: 0;">If you store credit card numbers, you must comply with
+                <span class="term" data-definition="PCI DSS (Payment Card Industry Data Security Standard) is a set of security rules for companies that handle credit card data. It requires encrypted storage, regular security audits, firewalls, and strict access controls. Non-compliance can result in fines up to $500,000 per breach.">PCI DSS</span>
+                — a massive set of security requirements. Audits, encryption, compliance officers, the works. For a small store, it's not worth it. Stripe is already PCI-compliant, so you let them handle it.</p>
+            </div>
+          </div>
+
+          <p>The flow looks like this:</p>
+
+          <div style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); margin: var(--space-8) 0;">
+            <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4);">
+              <div style="flex: 1; background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">User clicks Checkout</div>
+              <div style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+              <div style="flex: 1; background: var(--color-actor-2); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">Backend creates Stripe session</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4);">
+              <div style="flex: 1; background: var(--color-actor-2); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">Backend returns checkout URL</div>
+              <div style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+              <div style="flex: 1; background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">Frontend redirects user</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--space-4); margin-bottom: var(--space-4);">
+              <div style="flex: 1; background: var(--color-actor-4); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">User is now on Stripe's page</div>
+              <div style="font-size: var(--text-2xl); color: var(--color-accent);">→</div>
+              <div style="flex: 1; background: var(--color-actor-4); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">User enters card, clicks Pay</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--space-4);">
+              <div style="flex: 1; background: var(--color-actor-4); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">Stripe charges card</div>
+              <div style="font-size: var(--text-2xl); color: var(--color-success);">✓</div>
+              <div style="flex: 1; background: var(--color-success); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600;">Payment complete!</div>
+            </div>
+          </div>
+
+          <p>Dejavu never sees the card number. Stripe collects it, processes it, and tells Dejavu "payment succeeded" or "payment failed."</p>
+        </section>
+
+        <!-- Screen 2: Code -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Creating a Checkout Session</h2>
+          <p>Here's the backend code that creates the Stripe checkout session:</p>
+
+          <div class="translation-block" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); margin: var(--space-8) 0;">
+            <div class="translation-code" style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7; overflow-x: hidden;">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5;">CODE</span>
+              <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;"><code><span class="code-keyword">const</span> session = <span class="code-keyword">await</span> stripe.checkout.sessions
+  .<span class="code-function">create</span>({
+    <span class="code-property">mode</span>: <span class="code-string">"payment"</span>,
+    <span class="code-property">line_items</span>: lineItems,
+    <span class="code-property">success_url</span>: <span class="code-string">`${FRONTEND_URL}/checkout/success`</span>,
+    <span class="code-property">cancel_url</span>: <span class="code-string">`${FRONTEND_URL}/checkout/cancel`</span>,
+    <span class="code-property">shipping_address_collection</span>: {
+      <span class="code-property">allowed_countries</span>: [<span class="code-string">"US"</span>, <span class="code-string">"CA"</span>]
+    }
+  });
+
+res.<span class="code-function">json</span>({ <span class="code-property">checkoutUrl</span>: session.url });</code></pre>
+            </div>
+            <div class="translation-english" style="background: var(--color-surface-warm); padding: var(--space-6); font-size: var(--text-sm); line-height: 1.7; border-left: 3px solid var(--color-accent);">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5; color: var(--color-text-muted);">PLAIN ENGLISH</span>
+              <div style="margin-top: var(--space-4);">
+                <p style="margin: 0 0 var(--space-2) 0;">Ask Stripe to create a checkout session...</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;">It's a one-time payment (not a subscription)...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Here are the items they're buying...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">If payment succeeds, send them back to our success page...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">If they cancel, send them to our cancel page...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Collect a shipping address (US or Canada only).</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0;">Send the checkout URL back to the frontend.</p>
+              </div>
+            </div>
+          </div>
+
+          <p>The <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #F9E2AF; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">session.url</code> is a Stripe-hosted page where the user enters their card. The frontend gets that URL and redirects: <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #89B4FA; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">window.location.href = checkoutUrl</code>.</p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 6 -->
+  <section class="module" id="module-6" style="background: var(--color-bg-warm);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">06</span>
+        <h1 class="module-title">The Secret Handshake</h1>
+        <p class="module-subtitle">Webhooks — the "reverse API" that confirms payment</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: What are webhooks -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Problem: You Don't Know When Payment Completes</h2>
+          <p>After redirecting the user to Stripe, your backend is out of the loop. The user enters their card on <em>Stripe's</em> page, not yours. When payment succeeds, Stripe knows — but <strong>you don't</strong>.</p>
+
+          <p>You could poll Stripe every few seconds: "Did they pay yet? Did they pay yet?" But that's wasteful and slow.</p>
+
+          <p>Instead, Stripe uses a <strong>webhook</strong> — it <em>calls you back</em> when payment completes:</p>
+
+          <div style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-md); margin: var(--space-8) 0;">
+            <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+              <div style="display: flex; align-items: center; gap: var(--space-4);">
+                <div style="flex: 1; background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600; font-size: var(--text-sm);">Normal API</div>
+                <div style="flex: 2; font-size: var(--text-sm); color: var(--color-text-secondary);">You call <em>them</em>: "Hey Stripe, give me product info"</div>
+              </div>
+              <div style="display: flex; align-items: center; gap: var(--space-4);">
+                <div style="flex: 1; background: var(--color-actor-5); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-weight: 600; font-size: var(--text-sm);">Webhook</div>
+                <div style="flex: 2; font-size: var(--text-sm); color: var(--color-text-secondary);"><em>They</em> call you: "Hey Dejavu, payment just completed!"</div>
+              </div>
+            </div>
+          </div>
+
+          <p>Think of it like push notifications. Instead of checking your email every minute (polling), your phone pings you when new mail arrives (webhook).</p>
+
+          <div class="callout callout-accent" style="display: flex; gap: var(--space-4); padding: var(--space-5); background: var(--color-accent-light); border-left: 4px solid var(--color-accent); border-radius: var(--radius-md); margin: var(--space-8) 0;">
+            <div class="callout-icon" style="font-size: var(--text-3xl);">💡</div>
+            <div class="callout-content">
+              <strong class="callout-title" style="display: block; margin-bottom: var(--space-2); font-family: var(--font-display); font-size: var(--text-lg);">Webhooks Are Everywhere</strong>
+              <p style="margin: 0;">This isn't Stripe-specific — webhooks are a standard pattern for async events. GitHub uses them to notify you when someone opens a PR. Slack uses them to trigger bots. Shopify uses them when an order ships. Once you understand this pattern, you'll see it everywhere.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Screen 2: Security -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">The Security Problem</h2>
+          <p>Anyone can send an HTTP request to your webhook endpoint. What if someone fakes a "payment succeeded" message to get free stuff?</p>
+
+          <p><strong>Stripe signs every webhook</strong> with a secret key. Your backend verifies the signature before trusting the message:</p>
+
+          <div class="translation-block" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); margin: var(--space-8) 0;">
+            <div class="translation-code" style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-6); font-family: var(--font-mono); font-size: var(--text-sm); line-height: 1.7; overflow-x: hidden;">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5;">CODE</span>
+              <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;"><code><span class="code-keyword">const</span> sig = req.headers[<span class="code-string">"stripe-signature"</span>];
+
+<span class="code-keyword">try</span> {
+  event = stripe.webhooks.<span class="code-function">constructEvent</span>(
+    req.body,
+    sig,
+    WEBHOOK_SECRET
+  );
+} <span class="code-keyword">catch</span> (err) {
+  <span class="code-comment">// Signature invalid - reject it</span>
+  <span class="code-keyword">return</span> res.<span class="code-function">status</span>(<span class="code-number">400</span>).<span class="code-function">send</span>(<span class="code-string">"Bad signature"</span>);
+}</code></pre>
+            </div>
+            <div class="translation-english" style="background: var(--color-surface-warm); padding: var(--space-6); font-size: var(--text-sm); line-height: 1.7; border-left: 3px solid var(--color-accent);">
+              <span class="translation-label" style="position: absolute; top: var(--space-2); right: var(--space-3); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.5; color: var(--color-text-muted);">PLAIN ENGLISH</span>
+              <div style="margin-top: var(--space-4);">
+                <p style="margin: 0 0 var(--space-2) 0;">Get the signature from the request header...</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;">Try to verify this webhook came from Stripe...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Use the secret key only Stripe and you know...</p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;"></p>
+                <p style="margin: 0 0 var(--space-2) 0;">If signature doesn't match...</p>
+                <p style="margin: 0 0 var(--space-2) 0;">Reject it immediately — someone's trying to fake a webhook.</p>
+                <p style="margin: 0;"></p>
+              </div>
+            </div>
+          </div>
+
+          <p>The <code style="font-family: var(--font-mono); background: var(--color-bg-code); color: #F9E2AF; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);">WEBHOOK_SECRET</code> is like a password that proves the request really came from Stripe.</p>
+        </section>
+
+        <!-- Screen 3: What happens after verification -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Creating the Order</h2>
+          <p>Once the signature is verified, the webhook handler:</p>
+
+          <div style="display: flex; flex-direction: column; gap: var(--space-3); margin: var(--space-6) 0;">
+            <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-actor-3);">
+              <div style="flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">1</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">Creates an Order record</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">Stores the session ID, customer email, total amount, shipping address</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-actor-3);">
+              <div style="flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">2</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">Creates OrderItem records</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">One row per item purchased (jacket, variant ID, quantity, price)</p>
+              </div>
+            </div>
+
+            <div style="display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); border-left: 4px solid var(--color-actor-3);">
+              <div style="flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: var(--color-actor-3); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">3</div>
+              <div>
+                <h4 style="font-family: var(--font-display); font-weight: 600; margin-bottom: var(--space-1);">Decrements stock</h4>
+                <p style="margin: 0; font-size: var(--text-sm); color: var(--color-text-secondary);">If they bought Medium, reduce the Medium variant's stock count by 1</p>
+              </div>
+            </div>
+          </div>
+
+          <p>Now the order is official. The database knows what was purchased, payment is confirmed, and inventory is updated. Done!</p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Module 7 -->
+  <section class="module" id="module-7" style="background: var(--color-bg);">
+    <div class="module-content">
+      <header class="module-header animate-in">
+        <span class="module-number">07</span>
+        <h1 class="module-title">When Things Break</h1>
+        <p class="module-subtitle">Common failure modes and how to debug them</p>
+      </header>
+
+      <div class="module-body">
+        <!-- Screen 1: Common Problems -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Where Things Go Wrong</h2>
+          <p>Every step in the purchase flow has potential failure points. Here are the most common ones:</p>
+
+          <div class="pattern-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-4); margin: var(--space-8) 0;">
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-error);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-3);">Out of Stock</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">User adds size Medium to cart, but between adding and checking out, someone else bought the last one.</p>
+              <div style="background: var(--color-error-light); padding: var(--space-3); border-radius: var(--radius-sm); border-left: 3px solid var(--color-error);">
+                <strong style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-error); display: block; margin-bottom: var(--space-1);">Where to look:</strong>
+                <p style="margin: 0; font-size: var(--text-sm);">Backend checkout controller — stock validation happens there</p>
+              </div>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-error);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-3);">Double Orders</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">Stripe webhook fires twice (network retry), creating two orders for the same payment.</p>
+              <div style="background: var(--color-error-light); padding: var(--space-3); border-radius: var(--radius-sm); border-left: 3px solid var(--color-error);">
+                <strong style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-error); display: block; margin-bottom: var(--space-1);">The fix:</strong>
+                <p style="margin: 0; font-size: var(--text-sm);">
+                  <span class="term" data-definition="Idempotency means processing the same request multiple times produces the same result as processing it once. In this case, check if an order with this session ID already exists before creating a new one.">Idempotency check</span>
+                  — before creating an order, check if one already exists for this session ID</p>
+              </div>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-error);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-3);">Webhook Never Arrives</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">Payment succeeds, but your server is down or Stripe can't reach it. No order gets created.</p>
+              <div style="background: var(--color-error-light); padding: var(--space-3); border-radius: var(--radius-sm); border-left: 3px solid var(--color-error);">
+                <strong style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-error); display: block; margin-bottom: var(--space-1);">The fix:</strong>
+                <p style="margin: 0; font-size: var(--text-sm);">Stripe Dashboard logs all webhooks. Check there to see if delivery failed, then manually replay it</p>
+              </div>
+            </div>
+
+            <div class="pattern-card" style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); border-top: 3px solid var(--color-error);">
+              <h4 style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-3);">Network Timeout</h4>
+              <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-3);">Frontend sends checkout request, but backend takes too long. Request times out before Stripe session is created.</p>
+              <div style="background: var(--color-error-light); padding: var(--space-3); border-radius: var(--radius-sm); border-left: 3px solid var(--color-error);">
+                <strong style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-error); display: block; margin-bottom: var(--space-1);">Where to look:</strong>
+                <p style="margin: 0; font-size: var(--text-sm);">Backend logs — check if the request reached the server and how long the database query took</p>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- Screen 2: Debugging Scenario Quiz -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">Debugging Quiz</h2>
+          <p>Test your debugging instincts with these scenarios:</p>
+
+          <div class="quiz-container" style="margin: var(--space-8) 0;">
+            <div class="quiz-question-block" data-question="q7-1" data-correct="option-b" style="margin-bottom: var(--space-6);">
+              <div class="scenario-context" style="background: var(--color-info-light); padding: var(--space-4); border-radius: var(--radius-md); margin-bottom: var(--space-4); border-left: 4px solid var(--color-info);">
+                <span style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-info); font-weight: 700; display: block; margin-bottom: var(--space-2);">Scenario</span>
+                <p style="margin: 0; font-size: var(--text-sm);">A user reports: "I clicked Checkout, my card was charged, but I never got an order confirmation email and the item is still showing as 'in stock' on the website."</p>
+              </div>
+              <h3 class="quiz-question" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4);">Where would you look first?</h3>
+              <div class="quiz-options" style="display: flex; flex-direction: column; gap: var(--space-3);">
+                <button class="quiz-option" data-value="option-a" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>Frontend — maybe the cart state is wrong</span>
+                </button>
+                <button class="quiz-option" data-value="option-b" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>Webhook handler — payment succeeded but order wasn't created</span>
+                </button>
+                <button class="quiz-option" data-value="option-c" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>Database — maybe the Product table is corrupted</span>
+                </button>
+              </div>
+              <div class="quiz-feedback" id="q7-1-feedback" style="max-height: 0; overflow: hidden; opacity: 0;"></div>
+            </div>
+
+            <div class="quiz-question-block" data-question="q7-2" data-correct="option-a" style="margin-bottom: var(--space-6);">
+              <div class="scenario-context" style="background: var(--color-info-light); padding: var(--space-4); border-radius: var(--radius-md); margin-bottom: var(--space-4); border-left: 4px solid var(--color-info);">
+                <span style="font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-info); font-weight: 700; display: block; margin-bottom: var(--space-2);">Scenario</span>
+                <p style="margin: 0; font-size: var(--text-sm);">A user's order went through twice — they have two order confirmation emails and were charged twice.</p>
+              </div>
+              <h3 class="quiz-question" style="font-family: var(--font-display); font-weight: 600; font-size: var(--text-lg); margin-bottom: var(--space-4);">What's the likely cause?</h3>
+              <div class="quiz-options" style="display: flex; flex-direction: column; gap: var(--space-3);">
+                <button class="quiz-option" data-value="option-a" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>Webhook handler processed the same event twice (no idempotency check)</span>
+                </button>
+                <button class="quiz-option" data-value="option-b" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>User clicked "Checkout" twice really fast</span>
+                </button>
+                <button class="quiz-option" data-value="option-c" onclick="selectOption(this)" style="display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 2px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; width: 100%; text-align: left; font-family: var(--font-body); font-size: var(--text-sm);">
+                  <div class="quiz-option-radio" style="width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--color-border); flex-shrink: 0;"></div>
+                  <span>Stripe double-charged them (Stripe bug)</span>
+                </button>
+              </div>
+              <div class="quiz-feedback" id="q7-2-feedback" style="max-height: 0; overflow: hidden; opacity: 0;"></div>
+            </div>
+
+            <button class="quiz-check-btn" onclick="checkQuiz('module-7')" style="padding: var(--space-3) var(--space-5); background: var(--color-accent); color: white; border: none; border-radius: var(--radius-sm); font-family: var(--font-display); font-weight: 600; cursor: pointer; font-size: var(--text-base); margin-right: var(--space-3);">Check Answers</button>
+            <button class="quiz-reset-btn" onclick="resetQuiz('module-7')" style="padding: var(--space-3) var(--space-5); background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font-family: var(--font-display); font-weight: 600; cursor: pointer; font-size: var(--text-base);">Reset</button>
+          </div>
+
+        </section>
+
+        <!-- Screen 3: You're Ready -->
+        <section class="screen animate-in">
+          <h2 class="screen-heading">You're Ready</h2>
+          <p>You now understand how a full-stack e-commerce store works from button click to order confirmation. You know:</p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-4); margin: var(--space-8) 0;">
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ The 5 Actors</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">Who does what, and why separation matters</p>
+            </div>
+
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ Database Design</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">Products vs Variants, JOINs, SKUs</p>
+            </div>
+
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ State Management</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">When to use local state vs database</p>
+            </div>
+
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ Payment Processing</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">Why Stripe, PCI compliance, checkout sessions</p>
+            </div>
+
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ Webhooks</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">The reverse API pattern, signature verification</p>
+            </div>
+
+            <div style="background: var(--color-success-light); padding: var(--space-4); border-radius: var(--radius-md); border-left: 3px solid var(--color-success);">
+              <h4 style="font-weight: 600; margin-bottom: var(--space-2); color: var(--color-success);">✓ Debugging Strategies</h4>
+              <p style="font-size: var(--text-sm); margin: 0; color: var(--color-text-secondary);">Where to look when things break</p>
+            </div>
+          </div>
+
+          <p style="margin-top: var(--space-8); font-size: var(--text-lg); line-height: var(--leading-loose);">Most importantly, you have the <strong>vocabulary</strong> to talk precisely about software. When you tell an AI coding tool to "add an idempotency check to the webhook handler" or "store recently viewed items in React state, not the database," you know exactly what those words mean and why they matter.</p>
+
+          <p style="font-size: var(--text-lg); line-height: var(--leading-loose);">That's coding as a superpower. Now go build something amazing.</p>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Tooltip container (appended by JS) -->
+  <div id="tooltip-container"></div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // === PROGRESS BAR ===
+      const progressBar = document.querySelector('.progress-bar');
+
+      function updateProgressBar() {
+        const scrollTop = window.scrollY;
+        const scrollHeight = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = (scrollTop / scrollHeight) * 100;
+        progressBar.style.width = progress + '%';
+        progressBar.setAttribute('aria-valuenow', Math.round(progress));
+      }
+
+      window.addEventListener('scroll', () => {
+        requestAnimationFrame(updateProgressBar);
+      }, { passive: true });
+
+      // === NAV DOTS ===
+      const navDots = document.querySelectorAll('.nav-dot');
+      const modules = document.querySelectorAll('.module');
+
+      // Click navigation
+      navDots.forEach(dot => {
+        dot.addEventListener('click', () => {
+          const targetId = dot.dataset.target;
+          const targetModule = document.getElementById(targetId);
+          if (targetModule) {
+            targetModule.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+
+      // Update active dot on scroll
+      function updateActiveDot() {
+        let currentModuleIndex = 0;
+        const scrollPosition = window.scrollY + window.innerHeight / 3;
+
+        modules.forEach((module, index) => {
+          const rect = module.getBoundingClientRect();
+          const absoluteTop = rect.top + window.scrollY;
+
+          if (scrollPosition >= absoluteTop) {
+            currentModuleIndex = index;
+          }
+        });
+
+        navDots.forEach((dot, index) => {
+          dot.classList.remove('active');
+          if (index < currentModuleIndex) {
+            dot.classList.add('visited');
+          }
+          if (index === currentModuleIndex) {
+            dot.classList.add('active');
+          }
+        });
+      }
+
+      window.addEventListener('scroll', () => {
+        requestAnimationFrame(updateActiveDot);
+      }, { passive: true });
+
+      // === KEYBOARD NAVIGATION ===
+      document.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const currentIndex = Array.from(navDots).findIndex(dot => dot.classList.contains('active'));
+          if (currentIndex < navDots.length - 1) {
+            navDots[currentIndex + 1].click();
+          }
+        }
+
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const currentIndex = Array.from(navDots).findIndex(dot => dot.classList.contains('active'));
+          if (currentIndex > 0) {
+            navDots[currentIndex - 1].click();
+          }
+        }
+      });
+
+      // === SCROLL ANIMATIONS ===
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { rootMargin: '0px 0px -10% 0px', threshold: 0.1 });
+
+      document.querySelectorAll('.animate-in').forEach(el => observer.observe(el));
+
+      // === STAGGER ANIMATION SETUP ===
+      document.querySelectorAll('.stagger-children').forEach(parent => {
+        Array.from(parent.children).forEach((child, i) => {
+          child.style.setProperty('--stagger-index', i);
+        });
+      });
+
+      // === GLOSSARY TOOLTIPS ===
+      const tooltipContainer = document.getElementById('tooltip-container');
+      let currentTooltip = null;
+
+      window.showTooltip = function(term, definition) {
+        // Remove existing tooltip
+        if (currentTooltip) {
+          currentTooltip.remove();
+        }
+
+        // Create new tooltip
+        const tooltip = document.createElement('div');
+        tooltip.className = 'tooltip';
+        tooltip.textContent = definition;
+        document.body.appendChild(tooltip);
+
+        // Position it
+        const rect = term.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+
+        let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+        let top = rect.top - tooltipRect.height - 8;
+
+        // Keep it on screen
+        if (left < 10) left = 10;
+        if (left + tooltipRect.width > window.innerWidth - 10) {
+          left = window.innerWidth - tooltipRect.width - 10;
+        }
+        if (top < 10) {
+          top = rect.bottom + 8; // Show below if no room above
+        }
+
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+
+        // Show it
+        setTimeout(() => tooltip.classList.add('show'), 10);
+
+        currentTooltip = tooltip;
+      };
+
+      window.hideTooltip = function() {
+        if (currentTooltip) {
+          currentTooltip.classList.remove('show');
+          setTimeout(() => {
+            if (currentTooltip) {
+              currentTooltip.remove();
+              currentTooltip = null;
+            }
+          }, 150);
+        }
+      };
+
+      // === GROUP CHAT ANIMATIONS ===
+      const chatInstances = {};
+
+      window.playChatNext = function(instanceId) {
+        const container = document.getElementById(`chat-messages-${instanceId}`);
+        const messages = container.querySelectorAll('.chat-message');
+        const typing = document.getElementById(`chat-typing-${instanceId}`);
+        const avatar = document.getElementById(`typing-avatar-${instanceId}`);
+        const progress = document.getElementById(`chat-progress-${instanceId}`);
+
+        if (!chatInstances[instanceId]) {
+          chatInstances[instanceId] = { index: 0 };
+        }
+
+        const chat = chatInstances[instanceId];
+
+        if (chat.index >= messages.length) return;
+
+        const msg = messages[chat.index];
+        const sender = msg.dataset.sender;
+
+        // Actor color mapping
+        const actorColors = {
+          'frontend': 'var(--color-actor-1)',
+          'backend': 'var(--color-actor-2)',
+          'database': 'var(--color-actor-3)',
+          'stripe': 'var(--color-actor-4)',
+          'webhook': 'var(--color-actor-5)'
+        };
+
+        const actorInitials = {
+          'frontend': 'F',
+          'backend': 'B',
+          'database': 'D',
+          'stripe': 'S',
+          'webhook': 'W'
+        };
+
+        // Show typing indicator
+        avatar.textContent = actorInitials[sender] || '?';
+        avatar.style.background = actorColors[sender] || 'var(--color-text-muted)';
+        typing.style.display = 'flex';
+
+        setTimeout(() => {
+          typing.style.display = 'none';
+          msg.style.display = 'flex';
+          chat.index++;
+          progress.textContent = `${chat.index} / ${messages.length} messages`;
+
+          // Scroll to bottom
+          container.scrollTop = container.scrollHeight;
+        }, 800);
+      };
+
+      window.playChatAll = function(instanceId) {
+        const container = document.getElementById(`chat-messages-${instanceId}`);
+        const messages = container.querySelectorAll('.chat-message');
+
+        if (!chatInstances[instanceId]) {
+          chatInstances[instanceId] = { index: 0 };
+        }
+
+        const interval = setInterval(() => {
+          if (chatInstances[instanceId].index >= messages.length) {
+            clearInterval(interval);
+            return;
+          }
+          playChatNext(instanceId);
+        }, 1200);
+      };
+
+      window.resetChat = function(instanceId) {
+        const container = document.getElementById(`chat-messages-${instanceId}`);
+        const messages = container.querySelectorAll('.chat-message');
+        const typing = document.getElementById(`chat-typing-${instanceId}`);
+        const progress = document.getElementById(`chat-progress-${instanceId}`);
+
+        messages.forEach(msg => msg.style.display = 'none');
+        typing.style.display = 'none';
+
+        chatInstances[instanceId] = { index: 0 };
+        progress.textContent = `0 / ${messages.length} messages`;
+      };
+
+      // === QUIZ FUNCTIONS ===
+      window.selectOption = function(btn) {
+        const block = btn.closest('.quiz-question-block');
+        block.querySelectorAll('.quiz-option').forEach(o => {
+          o.classList.remove('selected');
+          o.querySelector('.quiz-option-radio').style.borderColor = '';
+          o.querySelector('.quiz-option-radio').style.background = '';
+          o.querySelector('.quiz-option-radio').style.boxShadow = '';
+        });
+        btn.classList.add('selected');
+        const radio = btn.querySelector('.quiz-option-radio');
+        radio.style.borderColor = 'var(--color-accent)';
+        radio.style.background = 'var(--color-accent)';
+        radio.style.boxShadow = 'inset 0 0 0 3px white';
+      };
+
+      const quizExplanations = {
+        'q3-1': {
+          correct: 'Exactly! Stock is tracked per variant (per size), not per product. The ProductVariant ID tells the database which specific size to check.',
+          incorrect: 'Not quite. Stock is tracked per <em>variant</em>, not per product. The jacket itself doesn\'t have a stock count — each size (Small, Medium, Large) has its own count. You need the ProductVariant ID to know which size to check.'
+        },
+        'q3-2': {
+          correct: 'Exactly! This is called <strong>normalization</strong> in database design. You store shared info once (in Product) and only store the unique bits (size, stock) in ProductVariant. If you update the jacket\'s price, you change it in one place, not three.',
+          incorrect: 'Not quite. The reason is about avoiding redundant data. If you stored everything in one table, you\'d repeat the product name, price, and images for <em>every size</em>. That wastes space and makes updates error-prone (what if you forget to update the price for one size?). Splitting them keeps shared data in one place.'
+        },
+        'q7-1': {
+          correct: 'Exactly! The card was charged (Stripe succeeded), but the order wasn\'t created and stock wasn\'t decremented. That\'s the webhook handler\'s job — so that\'s where the problem is. Maybe the webhook never fired, or it failed when creating the Order record.',
+          incorrect: 'Not quite. The clue is "card was charged" — that means Stripe succeeded. So the problem is <em>after</em> payment. The webhook handler is responsible for creating the order and updating stock once payment completes. Check backend logs to see if the webhook arrived and what went wrong when processing it.'
+        },
+        'q7-2': {
+          correct: 'Exactly! Stripe retries webhooks if your server doesn\'t respond quickly. If your webhook handler doesn\'t check "did I already process this session ID?", it will create a second order. The fix is an <strong>idempotency check</strong> at the start of the handler.',
+          incorrect: 'Not quite. Clicking Checkout twice would create two separate Stripe sessions (two separate payments). But the user was only charged once, and that one charge resulted in two orders — that\'s the webhook handler processing the same event twice. This happens when Stripe retries the webhook and your handler doesn\'t check if it already processed this session ID.'
+        }
+      };
+
+      window.checkQuiz = function(moduleId) {
+        const module = document.getElementById(moduleId);
+        const questions = module.querySelectorAll('.quiz-question-block');
+
+        questions.forEach(q => {
+          const selected = q.querySelector('.quiz-option.selected');
+          const feedback = q.querySelector('.quiz-feedback');
+          const correctValue = q.dataset.correct;
+          const questionId = q.dataset.question;
+
+          if (!selected) {
+            feedback.textContent = 'Pick an answer first!';
+            feedback.className = 'quiz-feedback show';
+            feedback.style.maxHeight = '200px';
+            feedback.style.opacity = '1';
+            feedback.style.padding = 'var(--space-3)';
+            feedback.style.marginTop = 'var(--space-2)';
+            feedback.style.borderRadius = 'var(--radius-sm)';
+            feedback.style.background = 'var(--color-warning-light)';
+            feedback.style.color = 'var(--color-warning)';
+            return;
+          }
+
+          const isCorrect = selected.dataset.value === correctValue;
+
+          if (isCorrect) {
+            selected.style.borderColor = 'var(--color-success)';
+            selected.style.background = 'var(--color-success-light)';
+            feedback.innerHTML = '<strong>✓ Correct!</strong> ' + (quizExplanations[questionId]?.correct || 'Well done!');
+            feedback.className = 'quiz-feedback show';
+            feedback.style.maxHeight = '300px';
+            feedback.style.opacity = '1';
+            feedback.style.padding = 'var(--space-3)';
+            feedback.style.marginTop = 'var(--space-2)';
+            feedback.style.borderRadius = 'var(--radius-sm)';
+            feedback.style.background = 'var(--color-success-light)';
+            feedback.style.color = 'var(--color-success)';
+          } else {
+            selected.style.borderColor = 'var(--color-error)';
+            selected.style.background = 'var(--color-error-light)';
+            const correctOption = q.querySelector(`[data-value="${correctValue}"]`);
+            correctOption.style.borderColor = 'var(--color-success)';
+            correctOption.style.background = 'var(--color-success-light)';
+            feedback.innerHTML = '<strong>Not quite.</strong> ' + (quizExplanations[questionId]?.incorrect || 'Try again!');
+            feedback.className = 'quiz-feedback show';
+            feedback.style.maxHeight = '300px';
+            feedback.style.opacity = '1';
+            feedback.style.padding = 'var(--space-3)';
+            feedback.style.marginTop = 'var(--space-2)';
+            feedback.style.borderRadius = 'var(--radius-sm)';
+            feedback.style.background = 'var(--color-error-light)';
+            feedback.style.color = 'var(--color-error)';
+          }
+
+          q.querySelectorAll('.quiz-option').forEach(o => o.disabled = true);
+        });
+      };
+
+      window.resetQuiz = function(moduleId) {
+        const module = document.getElementById(moduleId);
+        const questions = module.querySelectorAll('.quiz-question-block');
+
+        questions.forEach(q => {
+          q.querySelectorAll('.quiz-option').forEach(o => {
+            o.classList.remove('selected');
+            o.disabled = false;
+            o.style.borderColor = '';
+            o.style.background = '';
+            const radio = o.querySelector('.quiz-option-radio');
+            radio.style.borderColor = '';
+            radio.style.background = '';
+            radio.style.boxShadow = '';
+          });
+
+          const feedback = q.querySelector('.quiz-feedback');
+          feedback.className = 'quiz-feedback';
+          feedback.style.maxHeight = '0';
+          feedback.style.opacity = '0';
+          feedback.style.padding = '';
+          feedback.style.marginTop = '';
+        });
+      };
+
+      // === GLOSSARY TOOLTIP EVENT LISTENERS ===
+      document.addEventListener('DOMContentLoaded', () => {
+        const terms = document.querySelectorAll('.term');
+
+        terms.forEach(term => {
+          // Desktop: hover
+          term.addEventListener('mouseenter', () => {
+            const definition = term.dataset.definition;
+            if (definition) {
+              showTooltip(term, definition);
+            }
+          });
+
+          term.addEventListener('mouseleave', () => {
+            hideTooltip();
+          });
+
+          // Mobile: tap
+          term.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const definition = term.dataset.definition;
+            if (definition) {
+              // Toggle tooltip
+              if (currentTooltip) {
+                hideTooltip();
+              } else {
+                showTooltip(term, definition);
+              }
+            }
+          });
+        });
+
+        // Close tooltip when clicking outside
+        document.addEventListener('click', () => {
+          if (currentTooltip) {
+            hideTooltip();
+          }
+        });
+      });
+
+      // Initial updates
+      updateProgressBar();
+      updateActiveDot();
+    })();
+  </script>
+</body>
+</html>
