@@ -1,5 +1,5 @@
 const supabase = require("../supabase");
-const stripe = require("../../stripe");
+const stripe = require("../stripe");
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "https://dejavustudio.xyz";
 

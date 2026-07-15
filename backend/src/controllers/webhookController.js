@@ -1,4 +1,4 @@
-const stripe = require("../../stripe");
+const stripe = require("../stripe");
 const supabase = require("../supabase");
 const { randomUUID } = require("crypto");
 
