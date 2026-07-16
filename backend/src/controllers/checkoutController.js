@@ -111,6 +111,52 @@ const createCheckout = async (req, res) => {
     }
 };
 
+const getCheckoutSession = async (req, res) => {
+    const { sessionId } = req.params;
+
+    if (!sessionId || !sessionId.startsWith("cs_")) {
+        return res.status(400).json({ message: "A valid Stripe session id is required" });
+    }
+
+    try {
+        const { data: order, error } = await supabase
+            .from("Order")
+            .select(`
+                id,
+                stripeSessionId,
+                customerEmail,
+                totalAmount,
+                status,
+                shippingAddress,
+                createdAt,
+                OrderItem (
+                    id,
+                    quantity,
+                    priceAtSale,
+                    ProductVariant (
+                        size,
+                        Product ( name, images )
+                    )
+                )
+            `)
+            .eq("stripeSessionId", sessionId)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (!order) {
+            // Webhook may not have processed the session yet
+            return res.status(404).json({ message: "Order not found yet" });
+        }
+
+        return res.status(200).json(order);
+    } catch (error) {
+        console.error("Error fetching checkout session:", error);
+        return res.status(500).json({ message: "Internal server error" });
+    }
+};
+
 module.exports = {
     createCheckout,
+    getCheckoutSession,
 };

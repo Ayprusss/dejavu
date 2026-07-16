@@ -86,7 +86,13 @@ const getOrders = async(req, res) => {
             .select(`
                 *,
                 User ( email, firstName, lastName ),
-                OrderItem (*)
+                OrderItem (
+                    *,
+                    ProductVariant (
+                        size,
+                        Product ( name )
+                    )
+                )
             `)
             .order('createdAt', { ascending: false });
 
