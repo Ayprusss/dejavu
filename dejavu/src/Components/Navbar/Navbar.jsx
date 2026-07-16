@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect } from 'react';
 import { API_URL } from '../../config/api';
-import { INDEX_IMAGES } from '../../Pages/Index/Index.jsx';
+import { INDEX_IMAGES } from '../../data/indexData';
 import './Navbar.css';
 
 const NAV_LINKS = [
@@ -47,7 +47,7 @@ function Navbar({
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setLoggedInUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch (e) { }
+      } catch { /* malformed token — treat as logged out */ }
     }
   }, []);
 
@@ -304,8 +304,8 @@ function Navbar({
           aria-hidden={!isAccountOpen}
         >
           {loggedInUser ? (
-            <div className="account-form" style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <p style={{ margin: 0, fontSize: '14px' }}>Welcome back!</p>
+            <div className="account-form account-welcome">
+              <p className="account-welcome-text">Welcome back!</p>
 
               <button
                 type="button"
@@ -326,17 +326,16 @@ function Navbar({
               )}
               <button
                 type="button"
-                className="account-login-button"
+                className="account-login-button account-login-button--ghost"
                 onClick={handleLogout}
-                style={{ background: 'transparent', color: '#000', border: '1px solid #000' }}
               >
                 Log Out
               </button>
             </div>
           ) : (
             <form className="account-form" onSubmit={isRegisterMode ? handleRegister : handleLogin}>
-              {loginError && <p style={{ color: '#eb5757', fontSize: '13px', margin: '0 0 10px' }}>{loginError}</p>}
-              {registerSuccessMsg && <p style={{ color: '#27ae60', fontSize: '13px', margin: '0 0 10px', fontWeight: 'bold' }}>{registerSuccessMsg}</p>}
+              {loginError && <p className="account-message account-message--error">{loginError}</p>}
+              {registerSuccessMsg && <p className="account-message account-message--success">{registerSuccessMsg}</p>}
 
               {isRegisterMode && (
                 <>
