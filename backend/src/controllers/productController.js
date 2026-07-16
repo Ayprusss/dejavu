@@ -4,7 +4,7 @@ const { validate: isUuid } = require("uuid");
 const getProducts = async (req, res) => {
 
     try {
-        const { data: products, error } = await supabase.from("Product").select("*");
+        const { data: products, error } = await supabase.from("Product").select("*, ProductVariant (*)");
 
         if (error) {
             throw error;
