@@ -1,221 +1,161 @@
 .checkout-page {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-  background-color: #ffffff;
-  color: #000000;
+  font-family: 'Times New Roman', Times, serif;
+  background-color: #fff;
+  color: #000;
   min-height: 100vh;
+  box-sizing: border-box;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-  padding-left: calc(var(--sidebar-width, 0px) + 20px);
-  text-align: center;
+  padding: 80px 40px;
+  padding-left: calc(var(--sidebar-width, 0px) + 40px);
 }
 
 @media (max-width: 900px) {
   .checkout-page {
-    padding-left: 20px;
+    padding: 120px 24px 80px;
+    align-items: flex-start;
   }
 }
 
-.checkout-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 24px;
-}
-
-.checkout-icon--success {
-  background-color: #f0faf0;
-  border: 2px solid #27ae60;
-}
-
-.checkout-icon--cancel {
-  background-color: #fef5f5;
-  border: 2px solid #eb5757;
-}
-
-.checkout-icon svg {
-  width: 28px;
-  height: 28px;
-}
-
-.checkout-icon--success svg {
-  stroke: #27ae60;
-}
-
-.checkout-icon--cancel svg {
-  stroke: #eb5757;
+.checkout-inner {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
 }
 
 .checkout-title {
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 400;
+  margin: 0 0 18px;
+  line-height: 1.25;
 }
 
 .checkout-message {
-  font-size: 15px;
-  color: #666;
-  line-height: 1.6;
-  max-width: 420px;
-  margin: 0 0 32px 0;
+  font-size: 13px;
+  color: #000;
+  line-height: 1.55;
+  margin: 0 0 28px;
+}
+
+.checkout-lookup {
+  font-size: 13px;
+  font-style: italic;
+  margin: 0 0 28px;
+}
+
+.checkout-order {
+  border-top: 1px solid #000;
+  margin: 0 0 32px;
+}
+
+.checkout-order-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.checkout-order-row--head {
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.checkout-order-row--total {
+  border-top: 1px solid #000;
+}
+
+.checkout-order-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.checkout-order-item-image {
+  width: 48px;
+  height: 64px;
+  object-fit: cover;
+  background: #f6f6f6;
+}
+
+.checkout-order-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkout-order-item-name {
+  font-size: 13px;
+  margin: 0 0 4px;
+  line-height: 1.35;
+}
+
+.checkout-order-item-meta {
+  font-size: 12px;
+  color: #767676;
+  margin: 0;
+}
+
+.checkout-order-item-price {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.checkout-shipping {
+  padding: 14px 0 0;
+}
+
+.checkout-shipping-heading {
+  font-size: 12px;
+  margin: 0 0 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.checkout-shipping-line {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.checkout-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
 .checkout-btn {
   background-color: #000;
   color: #fff;
-  border: 1px solid #000;
-  padding: 12px 32px;
-  font-size: 14px;
+  border: 0;
+  padding: 9.6px 19.2px;
+  font-size: 12px;
   font-family: inherit;
+  line-height: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
   text-decoration: none;
   display: inline-block;
 }
 
 .checkout-btn:hover {
-  background-color: #fff;
-  color: #000;
-}
-
-.checkout-btn--secondary {
-  background-color: #fff;
-  color: #000;
-  margin-left: 12px;
-}
-
-.checkout-btn--secondary:hover {
-  background-color: #000;
   color: #fff;
+  opacity: 0.85;
 }
 
-.checkout-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+.checkout-link {
+  font-size: 12px;
+  color: #000;
+  text-decoration: none;
+  border-bottom: 1px solid #000;
+  padding-bottom: 1px;
+}
+
+.checkout-link:hover {
+  opacity: 0.7;
 }
 
 .checkout-order-id {
-  font-size: 13px;
-  color: #999;
+  font-size: 12px;
+  color: #767676;
   margin-top: 24px;
-}
-
-.checkout-success-page {
-  padding-top: 60px;
-  padding-bottom: 60px;
-}
-
-.checkout-success-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 40px;
-}
-
-.checkout-order-summary {
-  width: 100%;
-  max-width: 600px;
-  background-color: #fafafa;
-  border: 1px solid #eaeaea;
-  padding: 32px;
-  margin-bottom: 40px;
-  text-align: left;
-}
-
-.checkout-order-summary h2 {
-  margin: 0 0 24px 0;
-  font-size: 18px;
-  border-bottom: 1px solid #eaeaea;
-  padding-bottom: 16px;
-}
-
-.checkout-items-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.checkout-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.checkout-item-image {
-  width: 60px;
-  height: 80px;
-  object-fit: cover;
-  background-color: #eee;
-}
-
-.checkout-item-details {
-  flex: 1;
-}
-
-.checkout-item-name {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-}
-
-.checkout-item-meta {
-  font-size: 13px;
-  color: #666;
-  margin: 0;
-}
-
-.checkout-item-price {
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.checkout-totals {
-  border-top: 1px solid #eaeaea;
-  padding-top: 24px;
-  margin-bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.checkout-total-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 14px;
-  color: #666;
-}
-
-.checkout-total-final {
-  font-size: 16px;
-  font-weight: 600;
-  color: #000;
-  margin-top: 8px;
-  border-top: 1px solid #eaeaea;
-  padding-top: 16px;
-}
-
-.checkout-shipping-info {
-  background-color: #fff;
-  padding: 24px;
-  border: 1px solid #eaeaea;
-}
-
-.checkout-shipping-info h3 {
-  font-size: 14px;
-  margin: 0 0 12px 0;
-  font-weight: 600;
-}
-
-.checkout-shipping-info p {
-  margin: 0 0 4px 0;
-  font-size: 14px;
-  color: #444;
+  word-break: break-all;
 }
