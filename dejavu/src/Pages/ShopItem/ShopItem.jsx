@@ -4,21 +4,6 @@ import { SIZE_GUIDE_UNITS_LABEL } from '../../data/products';
 import { API_URL } from '../../config/api';
 import './ShopItem.css';
 
-function getInitialSize(product) {
-  if (!product?.sizes?.length) {
-    return '';
-  }
-
-  if (product.defaultSize) {
-    const hasDefaultSize = product.sizes.some((size) => size.label === product.defaultSize);
-    if (hasDefaultSize) {
-      return product.defaultSize;
-    }
-  }
-
-  return product.sizes[0].label;
-}
-
 function ShopItem({ onAddToCart }) {
   const { productId } = useParams();
 
@@ -43,10 +28,10 @@ function ShopItem({ onAddToCart }) {
         // Transform the Supabase/Express payload to match what this legacy UI expects:
         // Description and sizeGuide are stored as JSON strings in the DB
         let parsedDescription = null;
-        try { parsedDescription = typeof data.description === 'string' ? JSON.parse(data.description) : data.description; } catch (e) { }
+        try { parsedDescription = typeof data.description === 'string' ? JSON.parse(data.description) : data.description; } catch { /* leave null */ }
 
         let parsedSizeGuide = null;
-        try { parsedSizeGuide = typeof data.sizeGuide === 'string' ? JSON.parse(data.sizeGuide) : data.sizeGuide; } catch (e) { }
+        try { parsedSizeGuide = typeof data.sizeGuide === 'string' ? JSON.parse(data.sizeGuide) : data.sizeGuide; } catch { /* leave null */ }
 
         const formattedProduct = {
           id: data.id,
