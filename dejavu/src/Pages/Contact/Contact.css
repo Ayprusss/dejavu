@@ -2,8 +2,8 @@
   --contact-page-pad: clamp(1rem, 1.2vw, 1.8rem);
   min-height: 100vh;
   min-height: 100svh;
-  width: calc(100% - var(--sidebar-width));
-  margin-left: var(--sidebar-width);
+  width: 100%;
+  margin-left: 0;
   box-sizing: border-box;
   padding: clamp(1.5rem, 3vh, 2.8rem) var(--contact-page-pad) clamp(2rem, 8vh, 5rem);
   background: #fff;
@@ -14,8 +14,10 @@
   align-items: center;
 }
 
+/* Centered on the viewport (like the reference); the calc keeps the form
+   clear of the fixed sidebar on narrower desktop widths */
 .contact-form {
-  width: min(640px, 100%);
+  width: min(640px, calc(100vw - 2 * var(--sidebar-width) - 2rem));
   max-width: 100%;
 }
 
