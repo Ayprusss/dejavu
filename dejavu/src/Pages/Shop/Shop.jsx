@@ -46,7 +46,7 @@ function Shop() {
       try {
         await Promise.all(
           imageUrls.map((src) => {
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
               const img = new Image();
               img.src = src;
               img.onload = resolve;
@@ -79,6 +79,24 @@ function Shop() {
             const primaryImage = item.images && item.images.length > 0 ? item.images[0] : null;
             const hoverImage = item.images && item.images.length > 1 ? item.images[1] : null;
 
+            const variants = item.ProductVariant || [];
+            const totalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+            const isSoldOut = item.status !== 'ACTIVE' || (variants.length > 0 && totalStock <= 0);
+
+            let badge = null;
+            if (isSoldOut) {
+              badge = 'SOLD OUT';
+            } else if (variants.length > 0 && totalStock <= 2) {
+              badge = `ONLY ${totalStock} LEFT`;
+            } else if (variants.length > 0 && totalStock <= 5) {
+              badge = 'LOW STOCK';
+            }
+
+            const priceLabel = `$${Number(item.price).toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })} USD`;
+
             return (
               <article
                 key={item.id}
@@ -86,6 +104,7 @@ function Shop() {
               >
                 <Link className="shop-card-link" to={`/products/${item.stripeProductId}`}>
                   <div className="shop-card-media">
+                    {badge ? <span className="shop-card-badge">{badge}</span> : null}
                     {primaryImage ? (
                       <img
                         className="shop-card-image shop-card-image--primary"
@@ -106,11 +125,7 @@ function Shop() {
                   </div>
 
                   <h2 className="shop-card-name">{item.name}</h2>
-                  <p className="shop-card-price">${item.price}</p>
-
-                  {item.status !== 'ACTIVE' ? (
-                    <p className={`shop-card-status critical`}>{item.status}</p>
-                  ) : null}
+                  <p className={`shop-card-price${isSoldOut ? ' is-sold-out' : ''}`}>{priceLabel}</p>
                 </Link>
               </article>
             );

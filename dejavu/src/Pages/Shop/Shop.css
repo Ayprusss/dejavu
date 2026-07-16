@@ -33,8 +33,8 @@
 
 .shop-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(0.55rem, 1.1vw, 0.85rem) clamp(0.35rem, 0.8vw, 0.65rem);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(4rem, 7vw, 7rem) clamp(0.9rem, 1.5vw, 1.25rem);
   justify-content: start;
   align-items: start;
   opacity: 0;
@@ -116,23 +116,43 @@
 }
 
 .shop-card-name {
-  margin: 0.42rem 0 0;
+  margin: 0.65rem 0 0;
   margin-inline: 0;
   padding-inline: 0;
   text-indent: 0;
-  font-size: 14px;
-  line-height: 1.3;
+  font-size: 13px;
+  line-height: 1.35;
   font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .shop-card-price,
 .shop-card-status {
-  margin: 0.2rem 0 0;
+  margin: 0.28rem 0 0;
   margin-inline: 0;
   padding-inline: 0;
   text-indent: 0;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.3;
+}
+
+.shop-card-price.is-sold-out {
+  color: #767676;
+}
+
+.shop-card-badge {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 2;
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #000;
+  pointer-events: none;
 }
 
 .shop-card-status.is-low-stock {
@@ -145,19 +165,13 @@
   }
 
   .shop-page-inner {
-    width: min(100%, 58rem);
+    width: 100%;
     margin: 0;
   }
 
   .shop-grid {
-    grid-template-columns: repeat(2, max-content);
-    gap: clamp(2rem, 4vw, 3rem) clamp(1.5rem, 4vw, 2.5rem);
-  }
-
-  .shop-card {
-    width: clamp(14rem, 30vw, 21rem);
-    max-width: 100%;
-    justify-self: start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(3rem, 6vw, 5rem) clamp(0.8rem, 1.4vw, 1.1rem);
   }
 }
 
