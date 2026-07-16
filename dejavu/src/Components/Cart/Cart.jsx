@@ -29,66 +29,57 @@ function Cart({
   const hasItems = itemCount > 0;
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const [isMounted, setIsMounted] = useState(isOpen);
-  const [isClosing, setIsClosing] = useState(false);
   const [exitingItemIds, setExitingItemIds] = useState([]);
   const [isSubtotalLoading, setIsSubtotalLoading] = useState(false);
+  const [subtotalTick, setSubtotalTick] = useState(0);
+  const [prevItemCount, setPrevItemCount] = useState(itemCount);
   const removeTimeoutsRef = useRef({});
-  const subtotalLoadingTimeoutRef = useRef(null);
-  const previousItemCountRef = useRef(itemCount);
+
+  // Adjust state during render when props change (avoids effect-driven cascades)
+  if (isOpen && !isMounted) {
+    setIsMounted(true);
+  }
+
+  if (itemCount !== prevItemCount) {
+    setPrevItemCount(itemCount);
+    setIsSubtotalLoading(true);
+    setSubtotalTick((tick) => tick + 1);
+  }
+
+  const isClosing = !isOpen && isMounted;
 
   useEffect(() => {
-    if (isOpen) {
-      setIsMounted(true);
-      setIsClosing(false);
-      return undefined;
-    }
+    if (!isClosing) return undefined;
 
-    if (!isMounted) {
-      return undefined;
-    }
-
-    setIsClosing(true);
     const timeoutId = setTimeout(() => {
       setIsMounted(false);
-      setIsClosing(false);
     }, ANIMATION_MS);
 
     return () => clearTimeout(timeoutId);
-  }, [isOpen, isMounted]);
+  }, [isClosing]);
 
   useEffect(() => {
+    const timeouts = removeTimeoutsRef.current;
     return () => {
-      Object.values(removeTimeoutsRef.current).forEach((timeoutId) => {
+      Object.values(timeouts).forEach((timeoutId) => {
         clearTimeout(timeoutId);
       });
-      if (subtotalLoadingTimeoutRef.current) {
-        clearTimeout(subtotalLoadingTimeoutRef.current);
-      }
     };
   }, []);
 
   useEffect(() => {
-    if (itemCount !== previousItemCountRef.current) {
-      setIsSubtotalLoading(true);
-      if (subtotalLoadingTimeoutRef.current) {
-        clearTimeout(subtotalLoadingTimeoutRef.current);
-      }
-      subtotalLoadingTimeoutRef.current = setTimeout(() => {
-        setIsSubtotalLoading(false);
-      }, 900);
-    }
+    if (subtotalTick === 0) return undefined;
 
-    previousItemCountRef.current = itemCount;
-  }, [itemCount]);
+    const timeoutId = setTimeout(() => {
+      setIsSubtotalLoading(false);
+    }, 900);
+
+    return () => clearTimeout(timeoutId);
+  }, [subtotalTick]);
 
   const startSubtotalLoading = () => {
     setIsSubtotalLoading(true);
-    if (subtotalLoadingTimeoutRef.current) {
-      clearTimeout(subtotalLoadingTimeoutRef.current);
-    }
-    subtotalLoadingTimeoutRef.current = setTimeout(() => {
-      setIsSubtotalLoading(false);
-    }, 900);
+    setSubtotalTick((tick) => tick + 1);
   };
 
   const animateAndRemove = (itemId) => {
@@ -145,7 +136,7 @@ function Cart({
       }
 
       if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
+        window.location.assign(data.checkoutUrl);
       }
     } catch (error) {
       console.error('Checkout failed:', error);
