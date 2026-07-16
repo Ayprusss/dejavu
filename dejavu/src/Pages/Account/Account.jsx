@@ -18,7 +18,7 @@ function Account() {
       try {
         const payload = JSON.parse(atob(savedToken.split('.')[1]));
         setUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch (e) {
+      } catch {
         // Invalid token payload
       }
     }
