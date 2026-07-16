@@ -1,27 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import AdminDashboard from './AdminDashboard';
 import './Admin.css';
 
-function Admin() {
-  const [token, setToken] = useState(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+function decodeToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1]));
+  } catch {
+    return null;
+  }
+}
 
-  // Check localStorage for an existing token on mount
-  useEffect(() => {
-    const savedToken = localStorage.getItem('adminToken');
-    if (savedToken) {
-      setToken(savedToken);
-    }
-    setIsInitializing(false);
-  }, []);
+function getValidAdminToken() {
+  const savedToken = localStorage.getItem('adminToken');
+  if (!savedToken) return null;
+
+  const payload = decodeToken(savedToken);
+  const isExpired = payload?.exp && payload.exp * 1000 < Date.now();
+
+  return payload?.isAdmin && !isExpired ? savedToken : null;
+}
+
+function Admin() {
+  const [token] = useState(getValidAdminToken);
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     window.location.href = '/entry';
   };
-
-  if (isInitializing) return null;
 
   if (!token) {
     return <Navigate to="/entry" replace />;
