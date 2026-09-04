@@ -8,8 +8,8 @@ function CheckoutCancel() {
         <h1 className="checkout-title">Checkout Cancelled</h1>
 
         <p className="checkout-message">
-          Your order was not completed and no charges have been made.
-          Your cart has been saved if you would like to try again.
+          Your order was not completed and no charges have been made. Your cart has been
+          saved if you would like to try again.
         </p>
 
         <div className="checkout-actions">

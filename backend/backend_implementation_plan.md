@@ -5,10 +5,11 @@ This document outlines the architecture and step-by-step implementation plan for
 ## Architecture Overview
 
 **Tech Stack**:
-*   **Web Framework**: Node.js + Express
-*   **Database**: PostgreSQL (via Supabase)
-*   **eCommerce Engine**: Stripe Checkout & Webhooks
-*   **Admin Dashboard**: Custom React pages integrated into the frontend
+
+- **Web Framework**: Node.js + Express
+- **Database**: PostgreSQL (via Supabase)
+- **eCommerce Engine**: Stripe Checkout & Webhooks
+- **Admin Dashboard**: Custom React pages integrated into the frontend
 
 ### Conceptual Data Flow
 
@@ -19,6 +20,7 @@ This document outlines the architecture and step-by-step implementation plan for
 5.  **Admin Management**: An administrative section in the frontend interacts with protected backend routes (`/api/admin/*`) to manage products, adjust inventory, and view incoming orders.
 
 ### Recommended Directory Structure
+
 The Express backend should be completely isolated from your React frontend in its own dedicated package.
 
 ```text
@@ -79,24 +81,28 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 ## 2. API Route Architecture
 
 ### Storefront Routes (Public)
-*   `GET /api/products` - Fetch all active products for the shop index.
-*   `GET /api/products/:id` - Fetch detailed info (sizing, variants) for the product page.
-*   `POST /api/checkout` - Receives the user's cart containing variant IDs and quantities. Validates prices against the database, then calls Stripe to create a checkout session and returns the `checkoutUrl`.
+
+- `GET /api/products` - Fetch all active products for the shop index.
+- `GET /api/products/:id` - Fetch detailed info (sizing, variants) for the product page.
+- `POST /api/checkout` - Receives the user's cart containing variant IDs and quantities. Validates prices against the database, then calls Stripe to create a checkout session and returns the `checkoutUrl`.
 
 ### Webhook Routes (Public, but Secured)
-*   `POST /api/webhooks/stripe` - Receives payment events from Stripe (e.g., `checkout.session.completed`). **Must validate the Stripe signature using the raw request body**.
+
+- `POST /api/webhooks/stripe` - Receives payment events from Stripe (e.g., `checkout.session.completed`). **Must validate the Stripe signature using the raw request body**.
 
 ### Admin Routes (Protected via JWT/Session/Auth)
-*   `POST /api/admin/products` - Create new storefront products.
-*   `PUT /api/admin/products/:id` - Update products (e.g., change price, edit description).
-*   `PUT /api/admin/inventory/:variantId` - Adjust stock levels for specific sizes.
-*   `GET /api/admin/orders` - View historical orders and customer details.
+
+- `POST /api/admin/products` - Create new storefront products.
+- `PUT /api/admin/products/:id` - Update products (e.g., change price, edit description).
+- `PUT /api/admin/inventory/:variantId` - Adjust stock levels for specific sizes.
+- `GET /api/admin/orders` - View historical orders and customer details.
 
 ---
 
 ## 3. Step-by-step Implementation To-Do List
 
 ### Phase 1: Infrastructure & Database
+
 - [x] Initialize the Node project (`npm init -y`) and install dependencies (`express`, `cors`, `dotenv`, `@supabase/supabase-js`, `stripe`).
 - [x] Setup the server entry point (`server.js` or `app.js`) with essential middleware (JSON parsing, CORS).
 - [x] Install `@supabase/supabase-js` and set up the `SUPABASE_URL` and `SUPABASE_KEY` environment variables in `.env`.
@@ -104,6 +110,7 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 - [x] Run SQL `ALTER TABLE` commands in Supabase SQL Editor to rename Shopify-related columns (`shopifyId`, `shopifyOrderId`, `shopifyVariantId`) to Stripe equivalents, and add `shippingAddress` and `stock` columns to the existing Prisma tables.
 
 ### Phase 2: User Authentication & Storefront API
+
 - [x] Implement user authentication routes (`POST /api/auth/register`, `POST /api/auth/login`) using JWTs and `bcrypt` for password hashing.
 - [x] Build a frontend `/account` page for non-admin users.
   - [x] Need a backend route (`GET /api/user/orders`) to fetch orders for the logged-in user.
@@ -115,26 +122,29 @@ ALTER TABLE "ProductVariant" ADD COLUMN IF NOT EXISTS "stock" INTEGER DEFAULT 0;
 - [x] Ensure frontend `Shop.jsx` dynamically loads products from Supabase instead of hardcoded data.
 
 ### Phase 3: Stripe Checkout Integration
-- [X] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
-- [X] Implement the `POST /api/checkout` route:
-    - [X] Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
-    - [X] Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
-    - [X] Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
-    - [X] Handle successful response by extracting `session.url`.
-    - [X] Send the URL back to the frontend to redirect the user to Stripe Checkout.
+
+- [x] Set up a Stripe Developer account and get API keys (`STRIPE_SECRET_KEY`).
+- [x] Implement the `POST /api/checkout` route:
+  - [x] Receive cart items (`[ { variantId, quantity } ]`) from the React frontend.
+  - [x] Query Supabase to get the true prices for those variants (do NOT trust frontend prices).
+  - [x] Use the Stripe SDK (`stripe.checkout.sessions.create`) to build a session with `line_items`.
+  - [x] Handle successful response by extracting `session.url`.
+  - [x] Send the URL back to the frontend to redirect the user to Stripe Checkout.
 
 ### Phase 4: Webhooks & Order Fulfillment
-- [X] Create the `POST /api/webhooks/stripe` endpoint.
-- [X] **Crucial**: Implement middleware specifically for the webhook route to capture the RAW request body (required for Stripe signature validation — standard `express.json()` prevents this).
-- [X] Read the Stripe Webhook Signing Secret (`STRIPE_WEBHOOK_SECRET`) from `.env`.
-- [X] Use `stripe.webhooks.constructEvent` to validate the payload.
-- [X] Listen specifically for `checkout.session.completed`:
-    - Create a new `Order` row in Supabase marking it as 'PAID'.
-    - Create associated `OrderItem` rows.
-    - Decrement `stock` for each `product_variants` row purchased to avoid overselling.
-- [X] Use the Stripe CLI to forward webhooks to `localhost` to test locally.
+
+- [x] Create the `POST /api/webhooks/stripe` endpoint.
+- [x] **Crucial**: Implement middleware specifically for the webhook route to capture the RAW request body (required for Stripe signature validation — standard `express.json()` prevents this).
+- [x] Read the Stripe Webhook Signing Secret (`STRIPE_WEBHOOK_SECRET`) from `.env`.
+- [x] Use `stripe.webhooks.constructEvent` to validate the payload.
+- [x] Listen specifically for `checkout.session.completed`:
+  - Create a new `Order` row in Supabase marking it as 'PAID'.
+  - Create associated `OrderItem` rows.
+  - Decrement `stock` for each `product_variants` row purchased to avoid overselling.
+- [x] Use the Stripe CLI to forward webhooks to `localhost` to test locally.
 
 ### Phase 5: Frontend Connection & Admin Orders
-- [X] Update frontend `Cart.jsx` checkout button to call `POST /api/checkout`, grab the URL, and execute `window.location.href = data.checkoutUrl`.
-- [X] Add success/cancel redirect pages (`/checkout/success` and `/checkout/cancel`) in the frontend router to handle users returning from Stripe.
-- [X] Build an Admin UI screen (`/admin/orders`) to view paid orders, see shipping addresses gathered by Stripe, and mark them as fulfilled.
+
+- [x] Update frontend `Cart.jsx` checkout button to call `POST /api/checkout`, grab the URL, and execute `window.location.href = data.checkoutUrl`.
+- [x] Add success/cancel redirect pages (`/checkout/success` and `/checkout/cancel`) in the frontend router to handle users returning from Stripe.
+- [x] Build an Admin UI screen (`/admin/orders`) to view paid orders, see shipping addresses gathered by Stripe, and mark them as fulfilled.

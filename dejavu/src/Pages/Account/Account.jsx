@@ -33,7 +33,7 @@ function Account() {
       setError(null);
       try {
         const res = await fetch(`${API_URL}/api/user/orders`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) {
           throw new Error('Failed to fetch order history');
@@ -67,17 +67,22 @@ function Account() {
         <h1 className="account-title">My Account</h1>
         <div style={{ display: 'flex', gap: '15px' }}>
           {user?.isAdmin && (
-            <button className="account-btn account-btn--highlight" onClick={() => window.location.href = '/admin'}>
+            <button
+              className="account-btn account-btn--highlight"
+              onClick={() => (window.location.href = '/admin')}
+            >
               Admin Dashboard
             </button>
           )}
-          <button className="account-btn" onClick={handleLogout}>Log Out</button>
+          <button className="account-btn" onClick={handleLogout}>
+            Log Out
+          </button>
         </div>
       </header>
 
       <div className="account-panel">
         <h2 className="account-subtitle">Order History</h2>
-        
+
         {loading ? (
           <p>Loading your orders...</p>
         ) : error ? (
@@ -86,7 +91,7 @@ function Account() {
           <p>You haven't placed any orders yet.</p>
         ) : (
           <div className="account-orders-list">
-            {orders.map(order => (
+            {orders.map((order) => (
               <div key={order.id} className="account-order-card">
                 <div className="account-order-header">
                   <div>
@@ -100,7 +105,7 @@ function Account() {
                     <strong>${order.totalAmount.toFixed(2)}</strong>
                   </div>
                 </div>
-                
+
                 <table className="account-table">
                   <thead>
                     <tr>
@@ -111,12 +116,12 @@ function Account() {
                     </tr>
                   </thead>
                   <tbody>
-                    {order.OrderItem?.map(item => {
+                    {order.OrderItem?.map((item) => {
                       // Safety checks for nested Supabase response
                       const product = item.ProductVariant?.Product;
                       const size = item.ProductVariant?.size || 'N/A';
                       const name = product ? product.name : 'Unknown Product';
-                      
+
                       return (
                         <tr key={item.id}>
                           <td>{name}</td>

@@ -228,7 +228,12 @@ function AdminDashboard({ token, onLogout }) {
       ...(sizeGuide ? { sizeGuide } : {}),
     };
 
-    if (!payload.name || !payload.stripeProductId || !Number.isFinite(payload.price) || images.length === 0) {
+    if (
+      !payload.name ||
+      !payload.stripeProductId ||
+      !Number.isFinite(payload.price) ||
+      images.length === 0
+    ) {
       setError('Name, price, Stripe product ID, and at least one image are required');
       return;
     }
@@ -287,8 +292,12 @@ function AdminDashboard({ token, onLogout }) {
           <p className="admin-subtitle">Inventory, products, and orders</p>
         </div>
         <div className="admin-header-actions">
-          <a className="admin-link" href="/pages/shop">View storefront</a>
-          <button className="admin-btn admin-btn--ghost" onClick={onLogout}>Log Out</button>
+          <a className="admin-link" href="/pages/shop">
+            View storefront
+          </a>
+          <button className="admin-btn admin-btn--ghost" onClick={onLogout}>
+            Log Out
+          </button>
         </div>
       </header>
 
@@ -388,7 +397,9 @@ function AdminDashboard({ token, onLogout }) {
                         <tr className="admin-variant-row">
                           <td colSpan={5}>
                             {variants.length === 0 ? (
-                              <p className="admin-empty">No variants for this product.</p>
+                              <p className="admin-empty">
+                                No variants for this product.
+                              </p>
                             ) : (
                               <div className="admin-variant-grid">
                                 {variants.map((variant) => (
@@ -400,7 +411,9 @@ function AdminDashboard({ token, onLogout }) {
                                       className="admin-variant-input"
                                       type="number"
                                       min="0"
-                                      value={stockDrafts[variant.id] ?? variant.stock ?? 0}
+                                      value={
+                                        stockDrafts[variant.id] ?? variant.stock ?? 0
+                                      }
                                       onChange={(e) =>
                                         setStockDrafts((prev) => ({
                                           ...prev,
@@ -416,7 +429,9 @@ function AdminDashboard({ token, onLogout }) {
                                       }
                                       onClick={() => handleStockSave(variant.id)}
                                     >
-                                      {savingVariantId === variant.id ? 'Saving…' : 'Save'}
+                                      {savingVariantId === variant.id
+                                        ? 'Saving…'
+                                        : 'Save'}
                                     </button>
                                   </div>
                                 ))}
@@ -531,7 +546,10 @@ function AdminDashboard({ token, onLogout }) {
           )}
 
           {activeTab === 'product_form' && (
-            <form className="admin-panel admin-product-form" onSubmit={handleProductSubmit}>
+            <form
+              className="admin-panel admin-product-form"
+              onSubmit={handleProductSubmit}
+            >
               <h2 className="admin-form-title">
                 {form.id ? 'Edit Product' : 'New Product'}
               </h2>

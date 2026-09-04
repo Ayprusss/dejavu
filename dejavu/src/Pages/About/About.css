@@ -23,7 +23,7 @@
   margin: 0;
 }
 
-.about-copy p+p {
+.about-copy p + p {
   margin-top: clamp(0.45rem, 0.35rem + 0.2vw, 0.6rem);
 }
 

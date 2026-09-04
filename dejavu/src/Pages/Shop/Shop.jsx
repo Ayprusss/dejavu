@@ -19,7 +19,7 @@ function Shop() {
         const data = await response.json();
         setProducts(data);
       } catch (err) {
-        console.error("Error fetching products:", err);
+        console.error('Error fetching products:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -34,9 +34,9 @@ function Shop() {
 
     const loadImages = async () => {
       // Get all primary images we need to load (strings from the API)
-      const imageUrls = products.filter((item) => item.images && item.images.length > 0).map(
-        (item) => item.images[0]
-      );
+      const imageUrls = products
+        .filter((item) => item.images && item.images.length > 0)
+        .map((item) => item.images[0]);
 
       if (imageUrls.length === 0) {
         setIsGridVisible(true);
@@ -52,7 +52,7 @@ function Shop() {
               img.onload = resolve;
               img.onerror = resolve; // Resolve on error too to avoid blocking the whole page
             });
-          })
+          }),
         );
       } finally {
         // Double requestAnimationFrame ensures browser has painted layout before transition
@@ -67,8 +67,16 @@ function Shop() {
     loadImages();
   }, [products]);
 
-  if (loading) return <div style={{ textAlign: "center", padding: "100px 0" }}>Loading products...</div>;
-  if (error) return <div style={{ textAlign: "center", padding: "100px 0", color: "red" }}>Error: {error}</div>;
+  if (loading)
+    return (
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>Loading products...</div>
+    );
+  if (error)
+    return (
+      <div style={{ textAlign: 'center', padding: '100px 0', color: 'red' }}>
+        Error: {error}
+      </div>
+    );
 
   return (
     <section className="shop-page" aria-label="Shop products">
@@ -76,12 +84,18 @@ function Shop() {
         <div className={`shop-grid${isGridVisible ? ' shop-grid--visible' : ''}`}>
           {products.map((item) => {
             // Our API returns an array of string URLs
-            const primaryImage = item.images && item.images.length > 0 ? item.images[0] : null;
-            const hoverImage = item.images && item.images.length > 1 ? item.images[1] : null;
+            const primaryImage =
+              item.images && item.images.length > 0 ? item.images[0] : null;
+            const hoverImage =
+              item.images && item.images.length > 1 ? item.images[1] : null;
 
             const variants = item.ProductVariant || [];
-            const totalStock = variants.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-            const isSoldOut = item.status !== 'ACTIVE' || (variants.length > 0 && totalStock <= 0);
+            const totalStock = variants.reduce(
+              (sum, v) => sum + (Number(v.stock) || 0),
+              0,
+            );
+            const isSoldOut =
+              item.status !== 'ACTIVE' || (variants.length > 0 && totalStock <= 0);
 
             let badge = null;
             if (isSoldOut) {
@@ -102,7 +116,10 @@ function Shop() {
                 key={item.id}
                 className={`shop-card${hoverImage ? ' shop-card--has-hover' : ''}`}
               >
-                <Link className="shop-card-link" to={`/products/${item.stripeProductId}`}>
+                <Link
+                  className="shop-card-link"
+                  to={`/products/${item.stripeProductId}`}
+                >
                   <div className="shop-card-media">
                     {badge ? <span className="shop-card-badge">{badge}</span> : null}
                     {primaryImage ? (
@@ -125,7 +142,9 @@ function Shop() {
                   </div>
 
                   <h2 className="shop-card-name">{item.name}</h2>
-                  <p className={`shop-card-price${isSoldOut ? ' is-sold-out' : ''}`}>{priceLabel}</p>
+                  <p className={`shop-card-price${isSoldOut ? ' is-sold-out' : ''}`}>
+                    {priceLabel}
+                  </p>
                 </Link>
               </article>
             );
@@ -137,4 +156,3 @@ function Shop() {
 }
 
 export default Shop;
-

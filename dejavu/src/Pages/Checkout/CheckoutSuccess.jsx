@@ -89,14 +89,12 @@ function CheckoutSuccess() {
         <h1 className="checkout-title">Order Confirmed</h1>
 
         <p className="checkout-message">
-          Thank you for your purchase. A confirmation email with your order
-          details and tracking information is on its way
+          Thank you for your purchase. A confirmation email with your order details and
+          tracking information is on its way
           {order?.customerEmail ? ` to ${order.customerEmail}` : ''}.
         </p>
 
-        {isLookingUp ? (
-          <p className="checkout-lookup">Retrieving your order…</p>
-        ) : null}
+        {isLookingUp ? <p className="checkout-lookup">Retrieving your order…</p> : null}
 
         {order ? (
           <div className="checkout-order">
@@ -122,7 +120,9 @@ function CheckoutSuccess() {
                       {product?.name ?? 'Item'}
                     </p>
                     <p className="checkout-order-item-meta">
-                      {item.ProductVariant?.size ? `Size: ${item.ProductVariant.size}` : null}
+                      {item.ProductVariant?.size
+                        ? `Size: ${item.ProductVariant.size}`
+                        : null}
                       {item.ProductVariant?.size ? ' · ' : ''}
                       Qty: {item.quantity}
                     </p>

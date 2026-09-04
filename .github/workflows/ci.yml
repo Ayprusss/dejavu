@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A new push to the same branch cancels the run already in flight.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [backend, dejavu]
+    defaults:
+      run:
+        working-directory: ${{ matrix.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
+
+  test-backend:
+    name: test-backend (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # No secrets required: tests/setup.js supplies fake values for every
+      # variable src/config/env.js validates at boot.
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        if: matrix.node == 22
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-backend
+          path: backend/coverage/
+          retention-days: 7
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dejavu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dejavu/package-lock.json
+
+      - run: npm ci
+      - run: npm run test:coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-frontend
+          path: dejavu/coverage/
+          retention-days: 7
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dejavu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dejavu/package-lock.json
+
+      - run: npm ci
+
+      # VITE_API_URL is inlined at build time, so this only proves the bundle
+      # compiles — it is not the artifact that gets deployed.
+      - run: npm run build
+
+  boot-check:
+    name: boot-check (fail-fast config)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # Phase 0's guarantee, asserted in CI rather than argued for: the app must
+      # refuse to start when JWT_SECRET is absent.
+      - name: App refuses to boot without JWT_SECRET
+        run: |
+          set +e
+          output=$(SUPABASE_URL=x SUPABASE_KEY=x \
+                   STRIPE_SECRET_KEY=x STRIPE_WEBHOOK_SECRET=x \
+                   node -e "require('./src/app')" 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ $status -eq 0 ]; then
+            echo "::error::App booted without JWT_SECRET set"
+            exit 1
+          fi
+          echo "$output" | grep -q "JWT_SECRET" || {
+            echo "::error::Boot failed, but not for the expected reason"
+            exit 1
+          }
+          echo "OK: refused to boot, and named JWT_SECRET"
+
+      - name: App boots when every required variable is present
+        run: |
+          SUPABASE_URL=http://localhost:54321 SUPABASE_KEY=x \
+          JWT_SECRET=a-test-secret-that-is-at-least-32-chars \
+          STRIPE_SECRET_KEY=sk_test_x STRIPE_WEBHOOK_SECRET=whsec_x \
+          node -e "require('./src/app'); console.log('OK: booted')"
+
+  # Aggregate gate: this is the single check to require in branch protection,
+  # so adding a job above does not mean editing the protection rule.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    needs: [lint, test-backend, test-frontend, build-frontend, boot-check]
+    if: always()
+    steps:
+      - name: Fail if any required job did not succeed
+        run: |
+          echo "lint:           ${{ needs.lint.result }}"
+          echo "test-backend:   ${{ needs.test-backend.result }}"
+          echo "test-frontend:  ${{ needs.test-frontend.result }}"
+          echo "build-frontend: ${{ needs.build-frontend.result }}"
+          echo "boot-check:     ${{ needs.boot-check.result }}"
+          [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

@@ -1,22 +1,22 @@
 .index-page {
-    padding-top: calc(10vh + 30px);
-    padding-bottom: 100px;
-    width: 100%;
-    box-sizing: border-box;
+  padding-top: calc(10vh + 30px);
+  padding-bottom: 100px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .index-section {
-    margin-bottom: 100px;
-    display: flex;
-    justify-content: center;
-    width: 100%;
+  margin-bottom: 100px;
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .index-image {
-    max-width: clamp(280px, 80%, 650px);
-    width: auto;
-    height: auto;
-    max-height: 100vh;
-    object-fit: contain;
-    display: block;
+  max-width: clamp(280px, 80%, 650px);
+  width: auto;
+  height: auto;
+  max-height: 100vh;
+  object-fit: contain;
+  display: block;
 }

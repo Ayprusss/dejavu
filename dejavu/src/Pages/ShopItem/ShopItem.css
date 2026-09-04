@@ -123,7 +123,10 @@
   visibility: hidden;
   pointer-events: none;
   transform: translateY(-6px);
-  transition: opacity 180ms ease, transform 180ms ease, visibility 0ms linear 180ms;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0ms linear 180ms;
 }
 
 .shop-item-size-picker.is-open .shop-item-size-list {
@@ -131,7 +134,9 @@
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 
 .shop-item-size-list-item {
@@ -199,7 +204,7 @@
   display: block;
 }
 
-.shop-item-detail-card+.shop-item-detail-card {
+.shop-item-detail-card + .shop-item-detail-card {
   margin-top: 1.8rem;
 }
 
@@ -241,7 +246,9 @@
   left: 50%;
   background: #000;
   transform: translate(-50%, -50%);
-  transition: transform 180ms ease, opacity 180ms ease;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease;
 }
 
 .shop-item-detail-icon::before {
@@ -264,7 +271,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transform: translateY(-8px);
-  transition: grid-template-rows 280ms cubic-bezier(0.4, 0, 0.2, 1),
+  transition:
+    grid-template-rows 280ms cubic-bezier(0.4, 0, 0.2, 1),
     opacity 220ms ease,
     transform 220ms ease;
 }

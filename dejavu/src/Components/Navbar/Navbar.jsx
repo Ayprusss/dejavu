@@ -47,7 +47,9 @@ function Navbar({
       try {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setLoggedInUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch { /* malformed token — treat as logged out */ }
+      } catch {
+        /* malformed token — treat as logged out */
+      }
     }
   }, []);
 
@@ -60,7 +62,7 @@ function Navbar({
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed');
@@ -86,7 +88,7 @@ function Navbar({
       const response = await fetch(`${API_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, firstName, lastName })
+        body: JSON.stringify({ email, password, firstName, lastName }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Registration failed');
@@ -104,7 +106,6 @@ function Navbar({
         setLastName('');
         window.location.href = '/account';
       }, 1500);
-
     } catch (err) {
       setLoginError(err.message);
     } finally {
@@ -170,12 +171,11 @@ function Navbar({
         </a>
 
         <div className="mobile-actions">
-          <button
-            type="button"
-            className="mobile-cart-btn"
-            onClick={onOpenCart}
-          >
-            Cart {cartItemCount > 0 ? <sup className="mobile-cart-count">{cartItemCount}</sup> : null}
+          <button type="button" className="mobile-cart-btn" onClick={onOpenCart}>
+            Cart{' '}
+            {cartItemCount > 0 ? (
+              <sup className="mobile-cart-count">{cartItemCount}</sup>
+            ) : null}
           </button>
           <button
             type="button"
@@ -200,8 +200,20 @@ function Navbar({
           aria-label="Close menu"
         >
           <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-            <path d="M3.5 3.5L12.5 12.5" stroke="currentColor" strokeWidth="1.25" fill="none" strokeLinecap="square" />
-            <path d="M12.5 3.5L3.5 12.5" stroke="currentColor" strokeWidth="1.25" fill="none" strokeLinecap="square" />
+            <path
+              d="M3.5 3.5L12.5 12.5"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              fill="none"
+              strokeLinecap="square"
+            />
+            <path
+              d="M12.5 3.5L3.5 12.5"
+              stroke="currentColor"
+              strokeWidth="1.25"
+              fill="none"
+              strokeLinecap="square"
+            />
           </svg>
         </button>
 
@@ -220,11 +232,19 @@ function Navbar({
                   href="#"
                   className={`nav-link-item${isActive ? ' is-active' : ''}`}
                   onClick={(event) => handleNavClick(event, page)}
-                  aria-expanded={(page === 'stockist' && isStockistExpanded) || (page === 'collections' && isCollectionsExpanded) || (page === 'index' && isIndexExpanded) || undefined}
+                  aria-expanded={
+                    (page === 'stockist' && isStockistExpanded) ||
+                    (page === 'collections' && isCollectionsExpanded) ||
+                    (page === 'index' && isIndexExpanded) ||
+                    undefined
+                  }
                   aria-controls={
-                    page === 'stockist' ? 'stockist-links'
-                      : page === 'collections' ? 'collections-links'
-                        : page === 'index' ? 'index-links'
+                    page === 'stockist'
+                      ? 'stockist-links'
+                      : page === 'collections'
+                        ? 'collections-links'
+                        : page === 'index'
+                          ? 'index-links'
                           : undefined
                   }
                 >
@@ -265,7 +285,9 @@ function Navbar({
                           key={id}
                           className={`stockist-link-item${activeCollectionId === id ? ' is-active' : ''}`}
                           href={`#collection-${id}`}
-                          onClick={(event) => handleNavClick(event, 'collections', `#collection-${id}`)}
+                          onClick={(event) =>
+                            handleNavClick(event, 'collections', `#collection-${id}`)
+                          }
                         >
                           {title}
                         </a>
@@ -286,7 +308,9 @@ function Navbar({
                           key={id}
                           className={`stockist-link-item${activeIndexId === id ? ' is-active' : ''}`}
                           href={`#index-${id}`}
-                          onClick={(event) => handleNavClick(event, 'index', `#index-${id}`)}
+                          onClick={(event) =>
+                            handleNavClick(event, 'index', `#index-${id}`)
+                          }
                         >
                           {label}
                         </a>
@@ -310,7 +334,7 @@ function Navbar({
               <button
                 type="button"
                 className="account-login-button"
-                onClick={() => window.location.href = '/account'}
+                onClick={() => (window.location.href = '/account')}
               >
                 My Account
               </button>
@@ -333,9 +357,18 @@ function Navbar({
               </button>
             </div>
           ) : (
-            <form className="account-form" onSubmit={isRegisterMode ? handleRegister : handleLogin}>
-              {loginError && <p className="account-message account-message--error">{loginError}</p>}
-              {registerSuccessMsg && <p className="account-message account-message--success">{registerSuccessMsg}</p>}
+            <form
+              className="account-form"
+              onSubmit={isRegisterMode ? handleRegister : handleLogin}
+            >
+              {loginError && (
+                <p className="account-message account-message--error">{loginError}</p>
+              )}
+              {registerSuccessMsg && (
+                <p className="account-message account-message--success">
+                  {registerSuccessMsg}
+                </p>
+              )}
 
               {isRegisterMode && (
                 <>
@@ -389,17 +422,25 @@ function Navbar({
                 id="account-password"
                 name="password"
                 type="password"
-                autoComplete={isRegisterMode ? "new-password" : "current-password"}
+                autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
               />
 
               <div className="account-actions">
-                <button type="submit" className="account-login-button" disabled={isLoggingIn || isRegistering}>
+                <button
+                  type="submit"
+                  className="account-login-button"
+                  disabled={isLoggingIn || isRegistering}
+                >
                   {isRegisterMode
-                    ? (isRegistering ? 'Creating account...' : 'Create account')
-                    : (isLoggingIn ? 'Logging in...' : 'Login')}
+                    ? isRegistering
+                      ? 'Creating account...'
+                      : 'Create account'
+                    : isLoggingIn
+                      ? 'Logging in...'
+                      : 'Login'}
                 </button>
 
                 <button

@@ -39,7 +39,9 @@
   align-items: start;
   opacity: 0;
   transform: translateY(12px);
-  transition: opacity 420ms ease, transform 420ms ease;
+  transition:
+    opacity 420ms ease,
+    transform 420ms ease;
 }
 
 .shop-grid--visible {
@@ -180,7 +182,8 @@
     /* Reset layout for mobile top header */
     width: 100%;
     margin-left: 0;
-    padding: clamp(6rem, 12vh, 8rem) clamp(1rem, 2vw, 1.5rem) clamp(6rem, 9vh, 7rem) clamp(1rem, 2vw, 1.5rem);
+    padding: clamp(6rem, 12vh, 8rem) clamp(1rem, 2vw, 1.5rem) clamp(6rem, 9vh, 7rem)
+      clamp(1rem, 2vw, 1.5rem);
   }
 
   .shop-page-inner {

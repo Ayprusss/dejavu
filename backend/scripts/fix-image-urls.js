@@ -36,7 +36,7 @@ async function fixImageUrls() {
     }
 
     const fixedImages = images.map((url) =>
-      url.startsWith(OLD_BASE) ? url.replace(OLD_BASE, NEW_BASE) : url
+      url.startsWith(OLD_BASE) ? url.replace(OLD_BASE, NEW_BASE) : url,
     );
 
     const { error: updateError } = await supabase

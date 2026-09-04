@@ -38,8 +38,8 @@ function IndexPage({ onActiveIndexChange }) {
       {
         root: null,
         rootMargin: '-20% 0px -60% 0px',
-        threshold: 0
-      }
+        threshold: 0,
+      },
     );
 
     const sections = document.querySelectorAll('.index-section');
@@ -55,12 +55,7 @@ function IndexPage({ onActiveIndexChange }) {
     <div className="index-page">
       {INDEX_IMAGES.map((img) => (
         <section key={img.id} id={`index-${img.id}`} className="index-section">
-          <img
-            src={img.src}
-            alt={img.label}
-            loading="lazy"
-            className="index-image"
-          />
+          <img src={img.src} alt={img.label} loading="lazy" className="index-image" />
         </section>
       ))}
     </div>

@@ -1,5 +1,3 @@
-
-
 export const SIZE_GUIDE_ROWS = ['Shoulder', 'Sleeve', 'Length', 'Chest'];
 export const SIZE_GUIDE_UNITS_LABEL = 'inch/cm';
 
@@ -15,7 +13,10 @@ export const PRODUCTS = [
     images: [
       { src: '/images/isaac-1.jpg', alt: 'Weston crinkled leather jacket front view' },
       { src: '/images/isaac-2.jpg', alt: 'Weston crinkled leather jacket rear view' },
-      { src: '/images/isaac-3.jpg', alt: 'Weston crinkled leather jacket editorial view' },
+      {
+        src: '/images/isaac-3.jpg',
+        alt: 'Weston crinkled leather jacket editorial view',
+      },
     ],
     sizes: [
       { label: 'S', stock: 0 },
@@ -98,7 +99,9 @@ export const PRODUCTS = [
     defaultSize: 'M',
     description: {
       heading: 'Cotton & Leather',
-      paragraphs: ['Workwear inspired canvas jacket with leather trims and articulated sleeves.'],
+      paragraphs: [
+        'Workwear inspired canvas jacket with leather trims and articulated sleeves.',
+      ],
       modelNote: 'Model is 183cm/6ft wearing a size medium.',
     },
     sizeGuide: {
@@ -132,7 +135,9 @@ export const PRODUCTS = [
     defaultSize: 'S',
     description: {
       heading: 'Cotton & Cashmere',
-      paragraphs: ['A compact drizzler silhouette with soft hand feel and concealed zip closure.'],
+      paragraphs: [
+        'A compact drizzler silhouette with soft hand feel and concealed zip closure.',
+      ],
       modelNote: 'Model is 183cm/6ft wearing a size medium.',
     },
     sizeGuide: {
@@ -166,7 +171,9 @@ export const PRODUCTS = [
     defaultSize: 'S',
     description: {
       heading: 'Cotton Twill',
-      paragraphs: ['Reversible lightweight jacket in washed cotton twill with clean welt pockets.'],
+      paragraphs: [
+        'Reversible lightweight jacket in washed cotton twill with clean welt pockets.',
+      ],
       modelNote: 'Model is 183cm/6ft wearing a size medium.',
     },
     sizeGuide: {
@@ -200,7 +207,9 @@ export const PRODUCTS = [
     defaultSize: 'M',
     description: {
       heading: 'Raw Indigo',
-      paragraphs: ['Structured overshirt cut in rigid raw indigo denim with metal snap closure.'],
+      paragraphs: [
+        'Structured overshirt cut in rigid raw indigo denim with metal snap closure.',
+      ],
       modelNote: 'Model is 183cm/6ft wearing a size medium.',
     },
     sizeGuide: {

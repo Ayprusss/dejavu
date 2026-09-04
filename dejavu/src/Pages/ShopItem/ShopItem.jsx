@@ -28,25 +28,41 @@ function ShopItem({ onAddToCart }) {
         // Transform the Supabase/Express payload to match what this legacy UI expects:
         // Description and sizeGuide are stored as JSON strings in the DB
         let parsedDescription = null;
-        try { parsedDescription = typeof data.description === 'string' ? JSON.parse(data.description) : data.description; } catch { /* leave null */ }
+        try {
+          parsedDescription =
+            typeof data.description === 'string'
+              ? JSON.parse(data.description)
+              : data.description;
+        } catch {
+          /* leave null */
+        }
 
         let parsedSizeGuide = null;
-        try { parsedSizeGuide = typeof data.sizeGuide === 'string' ? JSON.parse(data.sizeGuide) : data.sizeGuide; } catch { /* leave null */ }
+        try {
+          parsedSizeGuide =
+            typeof data.sizeGuide === 'string'
+              ? JSON.parse(data.sizeGuide)
+              : data.sizeGuide;
+        } catch {
+          /* leave null */
+        }
 
         const formattedProduct = {
           id: data.id,
           stripeProductId: data.stripeProductId,
           name: data.name,
+          // Numeric price is the source of truth; the label is display only.
+          price: Number(data.price),
           priceLabel: `$${data.price} USD`,
-          images: data.images?.map(src => ({ src, alt: data.name })) || [],
+          images: data.images?.map((src) => ({ src, alt: data.name })) || [],
           description: parsedDescription,
           sizeGuide: parsedSizeGuide,
-          sizes: (data.ProductVariant || []).map(variant => ({
+          sizes: (data.ProductVariant || []).map((variant) => ({
             id: variant.id,
             stripePriceId: variant.stripeProductId,
             label: variant.size,
-            stock: variant.stock
-          }))
+            stock: variant.stock,
+          })),
         };
 
         setProduct(formattedProduct);
@@ -56,7 +72,7 @@ function ShopItem({ onAddToCart }) {
           setSelectedSize(formattedProduct.sizes[0].label);
         }
       } catch (err) {
-        console.error("Error fetching product:", err);
+        console.error('Error fetching product:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -71,19 +87,28 @@ function ShopItem({ onAddToCart }) {
     [product, selectedSize],
   );
 
-  if (loading) return <div style={{ textAlign: "center", padding: "100px 0" }}>Loading product details...</div>;
+  if (loading)
+    return (
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
+        Loading product details...
+      </div>
+    );
   if (error || !product) {
     return <Navigate to="/pages/shop" replace />;
   }
 
-  const isSelectedSizeSoldOut = !selectedSizeData || Number(selectedSizeData.stock) <= 0;
+  const isSelectedSizeSoldOut =
+    !selectedSizeData || Number(selectedSizeData.stock) <= 0;
   const selectedSizeLabel = selectedSizeData
     ? `${selectedSizeData.label}${Number(selectedSizeData.stock) <= 0 ? ' - Sold Out' : ''}`
     : 'Select Size';
   const ctaLabel = isSelectedSizeSoldOut ? 'Sold Out' : 'Add To Cart';
   const priceLabel = product.priceLabel ?? '$0.00 USD';
-  const sizeGuideColumns = product.sizeGuide?.columns ?? product.sizes?.map((size) => size.label) ?? [];
-  const sizeGuideRows = product.sizeGuide?.measurements ? Object.keys(product.sizeGuide.measurements) : [];
+  const sizeGuideColumns =
+    product.sizeGuide?.columns ?? product.sizes?.map((size) => size.label) ?? [];
+  const sizeGuideRows = product.sizeGuide?.measurements
+    ? Object.keys(product.sizeGuide.measurements)
+    : [];
 
   const handlePanelToggle = (panelName) => {
     setOpenPanel((currentPanel) => (currentPanel === panelName ? null : panelName));
@@ -106,8 +131,9 @@ function ShopItem({ onAddToCart }) {
       stripePriceId: selectedSizeData.stripePriceId,
       size: selectedSize,
       name: product.name,
-      price: product.priceLabel,
-      image: product.images?.[0]?.src
+      price: product.price,
+      priceLabel: product.priceLabel,
+      image: product.images?.[0]?.src,
     });
   };
 
@@ -130,7 +156,10 @@ function ShopItem({ onAddToCart }) {
           <h1 className="shop-item-title">{product.name}</h1>
           <p className="shop-item-price">{priceLabel}</p>
 
-          <div className={`shop-item-size-picker${isSizeListOpen ? ' is-open' : ''}`} onBlur={handleSizePickerBlur}>
+          <div
+            className={`shop-item-size-picker${isSizeListOpen ? ' is-open' : ''}`}
+            onBlur={handleSizePickerBlur}
+          >
             <button
               type="button"
               className="shop-item-size-trigger"
@@ -188,7 +217,10 @@ function ShopItem({ onAddToCart }) {
             {ctaLabel}
           </button>
 
-          <details className={`shop-item-detail-card${openPanel === 'description' ? ' is-open' : ''}`} open>
+          <details
+            className={`shop-item-detail-card${openPanel === 'description' ? ' is-open' : ''}`}
+            open
+          >
             <summary
               className="shop-item-detail-summary"
               onClick={(event) => {
@@ -203,24 +235,37 @@ function ShopItem({ onAddToCart }) {
               />
             </summary>
 
-            <div className="shop-item-detail-body" aria-hidden={openPanel !== 'description'}>
+            <div
+              className="shop-item-detail-body"
+              aria-hidden={openPanel !== 'description'}
+            >
               <div className="shop-item-detail-inner">
                 {product.description?.heading ? (
-                  <h2 className="shop-item-description-heading">{product.description.heading}</h2>
+                  <h2 className="shop-item-description-heading">
+                    {product.description.heading}
+                  </h2>
                 ) : null}
                 {product.description?.paragraphs?.map((paragraph, index) => (
-                  <p key={`description-${index}`} className="shop-item-description-copy">
+                  <p
+                    key={`description-${index}`}
+                    className="shop-item-description-copy"
+                  >
                     {paragraph}
                   </p>
                 ))}
                 {product.description?.modelNote ? (
-                  <p className="shop-item-description-model">{product.description.modelNote}</p>
+                  <p className="shop-item-description-model">
+                    {product.description.modelNote}
+                  </p>
                 ) : null}
               </div>
             </div>
           </details>
 
-          <details className={`shop-item-detail-card${openPanel === 'size-guide' ? ' is-open' : ''}`} open>
+          <details
+            className={`shop-item-detail-card${openPanel === 'size-guide' ? ' is-open' : ''}`}
+            open
+          >
             <summary
               className="shop-item-detail-summary"
               onClick={(event) => {
@@ -235,7 +280,10 @@ function ShopItem({ onAddToCart }) {
               />
             </summary>
 
-            <div className="shop-item-detail-body" aria-hidden={openPanel !== 'size-guide'}>
+            <div
+              className="shop-item-detail-body"
+              aria-hidden={openPanel !== 'size-guide'}
+            >
               <div className="shop-item-detail-inner">
                 <table className="shop-item-size-guide-table">
                   <thead>
@@ -254,7 +302,9 @@ function ShopItem({ onAddToCart }) {
                         <th scope="row">{rowLabel}</th>
                         {sizeGuideColumns.map((column, columnIndex) => (
                           <td key={`${product.id}-${rowLabel}-${column}`}>
-                            {product.sizeGuide?.measurements?.[rowLabel]?.[columnIndex] ?? '--'}
+                            {product.sizeGuide?.measurements?.[rowLabel]?.[
+                              columnIndex
+                            ] ?? '--'}
                           </td>
                         ))}
                       </tr>
@@ -262,7 +312,9 @@ function ShopItem({ onAddToCart }) {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={sizeGuideColumns.length + 1}>{SIZE_GUIDE_UNITS_LABEL}</td>
+                      <td colSpan={sizeGuideColumns.length + 1}>
+                        {SIZE_GUIDE_UNITS_LABEL}
+                      </td>
                     </tr>
                   </tfoot>
                 </table>

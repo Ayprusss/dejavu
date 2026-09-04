@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../../config/api';
+import { cartSubtotal } from '../../lib/cart';
 import './Cart.css';
 
 function formatPrice(value) {
@@ -27,7 +28,7 @@ function Cart({
 }) {
   const ANIMATION_MS = 500;
   const hasItems = itemCount > 0;
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cartSubtotal(items);
   const [isMounted, setIsMounted] = useState(isOpen);
   const [exitingItemIds, setExitingItemIds] = useState([]);
   const [isSubtotalLoading, setIsSubtotalLoading] = useState(false);
@@ -171,7 +172,12 @@ function Cart({
           >
             <div className="cart-dialog-header">
               <h2 className="cart-title">Cart</h2>
-              <button type="button" className="cart-close" aria-label="Close cart" onClick={onClose}>
+              <button
+                type="button"
+                className="cart-close"
+                aria-label="Close cart"
+                onClick={onClose}
+              >
                 <CloseIcon />
               </button>
             </div>
@@ -216,7 +222,9 @@ function Cart({
                         >
                           -
                         </button>
-                        <span><b>{item.quantity}</b></span>
+                        <span>
+                          <b>{item.quantity}</b>
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleIncrementClick(item.id)}
@@ -236,19 +244,26 @@ function Cart({
               <div className="cart-subtotal-row">
                 <span>Subtotal</span>
                 {isSubtotalLoading ? (
-                  <span className="cart-subtotal-loader" aria-label="Updating subtotal" role="status" />
+                  <span
+                    className="cart-subtotal-loader"
+                    aria-label="Updating subtotal"
+                    role="status"
+                  />
                 ) : (
                   <span>{formatPrice(subtotal)} USD</span>
                 )}
               </div>
-              <button type="button"
+              <button
+                type="button"
                 className="cart-checkout"
                 disabled={isCheckoutDisabled}
                 onClick={handleCheckout}
               >
                 Check Out
               </button>
-              <p className="cart-footnote">Shipping, taxes, and discount codes are calculated at checkout</p>
+              <p className="cart-footnote">
+                Shipping, taxes, and discount codes are calculated at checkout
+              </p>
             </footer>
           </aside>
         </>

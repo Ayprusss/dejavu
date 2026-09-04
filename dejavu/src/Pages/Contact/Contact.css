@@ -51,7 +51,7 @@
   appearance: none;
 }
 
-.contact-input+.contact-input {
+.contact-input + .contact-input {
   margin-top: clamp(1.2rem, 2.5vh, 1.8rem);
 }
 

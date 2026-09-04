@@ -1,9 +1,8 @@
 const app = require('./app');
+const env = require('./config/env');
 
-const port = process.env.PORT || 5000
-
-app.listen(port, () => {
-    console.log(`Server app listening on port ${port}`)
-})
+app.listen(env.PORT, () => {
+  console.log(`Server app listening on port ${env.PORT}`);
+});
 
 module.exports = app;

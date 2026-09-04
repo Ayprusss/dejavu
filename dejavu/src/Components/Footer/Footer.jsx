@@ -41,7 +41,10 @@ function Footer() {
         </nav>
       </footer>
       <TermsDialog isOpen={isTermsOpen} onClose={() => setIsTermsOpen(false)} />
-      <ShippingDialog isOpen={isShippingOpen} onClose={() => setIsShippingOpen(false)} />
+      <ShippingDialog
+        isOpen={isShippingOpen}
+        onClose={() => setIsShippingOpen(false)}
+      />
     </>
   );
 }

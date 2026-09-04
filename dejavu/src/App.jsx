@@ -17,6 +17,13 @@ import introPhoto from './Pages/Entry/dejavu-intro-photo.webp';
 import Collections from './Pages/Collections/Collections';
 import IndexPage from './Pages/Index/Index';
 import { COLLECTIONS_META } from './data/collectionsMeta';
+import {
+  addItem,
+  cartItemCount as countCartItems,
+  decrementItem,
+  incrementItem,
+  removeItem,
+} from './lib/cart';
 
 const INITIAL_CART_ITEMS = [];
 
@@ -105,77 +112,30 @@ function App() {
     account: '/account',
   };
 
-  const currentPage =
-    location.pathname.startsWith('/products/')
-      ? 'shop'
-      : (pathToPage[location.pathname] ?? 'entry');
+  const currentPage = location.pathname.startsWith('/products/')
+    ? 'shop'
+    : (pathToPage[location.pathname] ?? 'entry');
 
-  const cartItemCount = useMemo(
-    () => cartItems.reduce((sum, item) => sum + item.quantity, 0),
-    [cartItems],
-  );
+  const cartItemCount = useMemo(() => countCartItems(cartItems), [cartItems]);
 
   const handleIncrement = (itemId) => {
-    setCartItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, quantity: item.quantity + 1 } : item,
-      ),
-    );
+    setCartItems((prev) => incrementItem(prev, itemId));
   };
 
   const handleDecrement = (itemId) => {
-    setCartItems((prev) =>
-      prev
-        .map((item) =>
-          item.id === itemId
-            ? { ...item, quantity: Math.max(0, item.quantity - 1) }
-            : item,
-        )
-        .filter((item) => item.quantity > 0),
-    );
+    setCartItems((prev) => decrementItem(prev, itemId));
   };
 
   const handleRemove = (itemId) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== itemId));
+    setCartItems((prev) => removeItem(prev, itemId));
   };
 
   const handleAddToCart = (productPayload) => {
-    if (!productPayload || !productPayload.size) {
-      return;
+    setCartItems((prev) => addItem(prev, productPayload, introPhoto));
+
+    if (productPayload?.size) {
+      setIsCartOpen(true);
     }
-
-    const cartLineId = productPayload.variantId || `${productPayload.productId}-${productPayload.size}`;
-    
-    setCartItems((prev) => {
-      const existingItem = prev.find((item) => item.id === cartLineId);
-
-      if (existingItem) {
-        return prev.map((item) =>
-          item.id === cartLineId ? { ...item, quantity: item.quantity + 1 } : item,
-        );
-      }
-
-      // Convert priceLabel string back into a number for Cart subtotal calculation
-      const numericPrice = typeof productPayload.price === 'string' 
-        ? Number(productPayload.price.replace(/[^0-9.-]+/g,"")) 
-        : Number(productPayload.price) || 0;
-
-      return [
-        ...prev,
-        {
-          id: cartLineId,
-          variantId: productPayload.variantId,
-          stripePriceId: productPayload.stripePriceId,
-          name: productPayload.name,
-          size: productPayload.size,
-          price: numericPrice,
-          quantity: 1,
-          image: productPayload.image || introPhoto,
-        },
-      ];
-    });
-
-    setIsCartOpen(true);
   };
 
   const handleNavigate = (page, hash = '') => {
@@ -188,7 +148,9 @@ function App() {
     navigate((pageToPath[page] ?? '/entry') + hash);
   };
 
-  const isAppRoute = !location.pathname.startsWith('/admin') && !location.pathname.startsWith('/account');
+  const isAppRoute =
+    !location.pathname.startsWith('/admin') &&
+    !location.pathname.startsWith('/account');
 
   return (
     <div className="app-shell">
@@ -205,7 +167,7 @@ function App() {
           onOpenCart={() => setIsCartOpen(true)}
         />
       )}
-      
+
       {isAppRoute && (
         <Cart
           isOpen={isCartOpen}
@@ -218,8 +180,8 @@ function App() {
           onRemove={handleRemove}
         />
       )}
-      
-      <main className={isAppRoute ? "app-content" : ""}>
+
+      <main className={isAppRoute ? 'app-content' : ''}>
         <Routes>
           <Route path="/" element={<Navigate to="/entry" replace />} />
           <Route path="/entry" element={<Entry />} />
@@ -229,17 +191,23 @@ function App() {
             path="/products/:productId"
             element={<ShopItem key={location.pathname} onAddToCart={handleAddToCart} />}
           />
-          <Route path="/collections" element={<Collections onActiveCollectionChange={setActiveCollectionId} />} />
-          <Route path="/index" element={<IndexPage onActiveIndexChange={setActiveIndexId} />} />
+          <Route
+            path="/collections"
+            element={<Collections onActiveCollectionChange={setActiveCollectionId} />}
+          />
+          <Route
+            path="/index"
+            element={<IndexPage onActiveIndexChange={setActiveIndexId} />}
+          />
           <Route path="/stockist" element={<Entry />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/checkout/cancel" element={<CheckoutCancel />} />
-          
+
           <Route path="/admin/*" element={<Admin />} />
           <Route path="/account/*" element={<Account />} />
-          
+
           <Route path="*" element={<Navigate to="/entry" replace />} />
         </Routes>
       </main>
