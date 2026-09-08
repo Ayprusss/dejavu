@@ -1,10 +1,34 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dejavu
+      POSTGRES_PASSWORD: dejavu
+      POSTGRES_DB: dejavu
+    ports:
+      # Exposed so `npm run migrate` and psql work from the host.
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      # `-U dejavu -d dejavu` matters: without them pg_isready checks the
+      # default `postgres` database and reports ready before ours exists.
+      test: ["CMD-SHELL", "pg_isready -U dejavu -d dejavu"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   backend:
     build: ./backend
     ports:
       - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       PORT: 5000
+      DATABASE_URL: postgres://dejavu:dejavu@db:5432/dejavu
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_KEY: ${SUPABASE_KEY}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
@@ -21,3 +45,6 @@ services:
       - "5173:80"
     depends_on:
       - backend
+
+volumes:
+  db-data:

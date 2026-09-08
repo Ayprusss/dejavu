@@ -9,6 +9,10 @@
   "scripts": {
     "start": "node --require dotenv/config src/server.js",
     "dev": "nodemon --require dotenv/config src/server.js",
+    "migrate": "node-pg-migrate --envPath .env",
+    "migrate:up": "node-pg-migrate --envPath .env up",
+    "migrate:down": "node-pg-migrate --envPath .env down",
+    "migrate:redo": "npm run migrate:down -- 0 && npm run migrate:up",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -26,6 +30,8 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "node-pg-migrate": "^9.0.0",
+    "pg": "^8.23.0",
     "stripe": "^20.4.1",
     "uuid": "^13.0.0"
   },

@@ -102,17 +102,17 @@ Delete `backend/supatest.js`, the empty `backend/README.md` (or write one), the 
 
 ---
 
-# Phase 1 — Test Harness + CI Gate
+# Phase 1 — Test Harness + CI Gate [x]
 
 *Roadmap #1.* Goal is a green gate on `main` and tests for the logic that **survives the Phase 2 rewrite** — no throwaway work.
 
-### Tooling
+### Tooling [x]
 
 **Vitest** for both workspaces (one runner, one config idiom; handles the backend's CommonJS fine) plus **supertest** on the backend. `backend/src/app.js:50` already exports the app without listening, so no refactor is needed to start.
 
 Add to the backend: ESLint flat config (it has none today) and Prettier across both workspaces. Note the frontend has **React Compiler enabled** via `babel-plugin-react-compiler` — it is sensitive to hook-rule violations, so keep `eslint-plugin-react-hooks` gating.
 
-### What to test now
+### What to test now [x]
 
 Chosen because none of it touches the data layer, so all of it survives Phase 2:
 
@@ -126,7 +126,7 @@ Chosen because none of it touches the data layer, so all of it survives Phase 2:
 
 **Server-side price integrity** — assert that a `price` field in the request body is ignored. It already is (`checkoutController.js:14-17` narrows to `{ variantId, quantity }`), and a test locks that in.
 
-### CI workflow
+### CI workflow [x]
 
 `.github/workflows/ci.yml`, on PR and push to `main`. Jobs: `lint` · `test-backend` (Node 20 + 22 matrix) · `test-frontend` · `build-frontend` · `gitleaks`. `actions/setup-node` with `cache: npm` keyed per workspace.
 
@@ -146,11 +146,11 @@ Enable branch protection on `main` requiring these checks. **This changes your w
 
 Three reasons, all defensible: the schema uses quoted camelCase identifiers throughout, which fights every ORM; the whole point of Phase 3 is explicit transactions and `UPDATE ... WHERE stock >= $n`, and an ORM hides exactly the mechanism that's interesting; and Prisma's query engine binary is a poor fit for the Lambda package in Phase 6. There is also a leftover `_prisma_migrations` table in `init.sql` from an ORM that was already ripped out once.
 
-### Local Postgres
+### Local Postgres [x]
 
 Add a `db` service (`postgres:16-alpine`) to `docker-compose.yml` with `depends_on: { db: { condition: service_healthy } }`. Local, CI, and RDS then all run the same schema from the same migrations — which is the actual point.
 
-### Migrations
+### Migrations [x]
 
 Convert `init-scripts/init.sql` into `backend/migrations/`, each with an `up` and a `down`:
 
@@ -166,7 +166,7 @@ Convert `init-scripts/init.sql` into `backend/migrations/`, each with an `up` an
 
 Keep the double-quoted camelCase identifiers throughout — the rewrite has to match.
 
-### Data-access layer
+### Data-access layer [~] — `db/` + `repositories/` landed in 2a; the 20 call sites are 2b
 
 ```
 backend/src/db/pool.js              pg.Pool; max configurable (load-bearing in Phase 6)
