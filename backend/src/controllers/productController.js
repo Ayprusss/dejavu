@@ -1,15 +1,10 @@
-const supabase = require('../supabase');
+const pool = require('../db/pool');
+const productRepo = require('../repositories/productRepo');
 const { validate: isUuid } = require('uuid');
 
 const getProducts = async (req, res) => {
   try {
-    const { data: products, error } = await supabase
-      .from('Product')
-      .select('*, ProductVariant (*)');
-
-    if (error) {
-      throw error;
-    }
+    const products = await productRepo.findAllWithVariants(pool);
 
     res.status(200).json(products);
   } catch (error) {
@@ -21,23 +16,18 @@ const getProducts = async (req, res) => {
 
 const getProductById = async (req, res) => {
   const { id } = req.params;
-  console.log('FETCHING PRODUCT FOR ID:', id);
+
   try {
-    let query = supabase.from('Product').select('*, ProductVariant (*)');
+    // The route accepts either a UUID or a Stripe product id. The branch is
+    // load-bearing now in a way it was not before: passing a non-UUID to a
+    // `uuid` column is a 22P02 error from Postgres, where PostgREST returned
+    // an empty result.
+    const product = isUuid(id)
+      ? await productRepo.findByIdWithVariants(pool, id)
+      : await productRepo.findByStripeProductIdWithVariants(pool, id);
 
-    if (isUuid(id)) {
-      query = query.eq('id', id);
-    } else {
-      query = query.eq('stripeProductId', id);
-    }
-
-    const { data: product, error } = await query.single();
-
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ message: 'Product not found' });
-      }
-      throw error;
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
     }
 
     res.status(200).json(product);

@@ -117,7 +117,7 @@ function Account() {
                   </thead>
                   <tbody>
                     {order.OrderItem?.map((item) => {
-                      // Safety checks for nested Supabase response
+                      // Safety checks for the nested order payload
                       const product = item.ProductVariant?.Product;
                       const size = item.ProductVariant?.size || 'N/A';
                       const name = product ? product.name : 'Unknown Product';

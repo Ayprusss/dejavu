@@ -1,17 +1,23 @@
-require('dotenv').config();
-const { createClient } = require('@supabase/supabase-js');
+/**
+ * Reset the local database to a known state.
+ *
+ *   docker compose up -d db && npm run migrate:up && npm run seed
+ *
+ * Destructive: it truncates every table before inserting. It reads DATABASE_URL
+ * like the app does, so pointing it at anything other than a local database is
+ * on you.
+ *
+ * The whole seed runs in one transaction — so a failure halfway leaves the
+ * database as it was rather than half-seeded.
+ */
+
 const { randomUUID: uuidv4 } = require('crypto');
-
-// Initialize Supabase. Requires SUPABASE_URL and SUPABASE_KEY in .env
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing SUPABASE_URL or SUPABASE_KEY in .env');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const bcrypt = require('bcrypt');
+const pool = require('../src/db/pool');
+const withTransaction = require('../src/db/withTransaction');
+const userRepo = require('../src/repositories/userRepo');
+const productRepo = require('../src/repositories/productRepo');
+const orderRepo = require('../src/repositories/orderRepo');
 
 const BASE_IMG_URL = 'http://localhost:5173/images/';
 
@@ -61,7 +67,6 @@ const seedProducts = [
       `${BASE_IMG_URL}isaac-2.jpg`,
       `${BASE_IMG_URL}isaac-3.jpg`,
     ],
-    updatedAt: new Date().toISOString(),
   },
   {
     id: prod2Id,
@@ -90,197 +95,199 @@ const seedProducts = [
       `${BASE_IMG_URL}arlo_2.webp`,
       `${BASE_IMG_URL}arlo_3.webp`,
     ],
-    updatedAt: new Date().toISOString(),
   },
 ];
 
+// Every size of a product shares that product's Stripe product id. The old seed
+// wrote a distinct fake value per row ('price_isaac_s', ...) because
+// ProductVariant had a UNIQUE on stripeProductId — which is exactly the bug
+// migration 0002 removed. Sharing the id here is what actually exercises it.
 const seedVariants = [
   {
     id: var1sId,
     productId: prod1Id,
-    stripeProductId: 'price_isaac_s',
+    stripeProductId: 'prod_stripe_isaac_1',
     size: 'S',
     stock: 20,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
   {
     id: var1mId,
     productId: prod1Id,
-    stripeProductId: 'price_isaac_m',
+    stripeProductId: 'prod_stripe_isaac_1',
     size: 'M',
     stock: 15,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
   {
     id: var1lId,
     productId: prod1Id,
-    stripeProductId: 'price_isaac_l',
+    stripeProductId: 'prod_stripe_isaac_1',
     size: 'L',
     stock: 3,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
   {
     id: var2sId,
     productId: prod2Id,
-    stripeProductId: 'price_arlo_s',
+    stripeProductId: 'prod_stripe_arlo_1',
     size: 'S',
     stock: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
   {
     id: var2mId,
     productId: prod2Id,
-    stripeProductId: 'price_arlo_m',
+    stripeProductId: 'prod_stripe_arlo_1',
     size: 'M',
     stock: 17,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
   {
     id: var2lId,
     productId: prod2Id,
-    stripeProductId: 'price_arlo_l',
+    stripeProductId: 'prod_stripe_arlo_1',
     size: 'L',
     stock: 3,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
   },
 ];
+
 async function main() {
   console.log('Start seeding...');
 
-  // 1. Delete existing data (Cascade deletes handle most, but we go bottom-up to be safe)
-  console.log('Clearing old data (this relies on the updated table schemas)...');
+  await withTransaction(pool, async (tx) => {
+    // 1. Clear existing data. TRUNCATE ... CASCADE beats the old
+    //    delete-where-id-is-not-an-impossible-uuid trick, and RESTART IDENTITY
+    //    keeps it honest if a sequence is ever added.
+    console.log('Clearing old data...');
+    await tx.query(
+      `TRUNCATE "OrderItem", "Order", "ProductVariant", "Product", "User", "StripeEvent"
+       RESTART IDENTITY CASCADE`,
+    );
 
-  // We use a dummy UUID that will never match to delete all rows.
-  const impossibleId = uuidv4();
-  await supabase.from('OrderItem').delete().neq('id', impossibleId);
-  await supabase.from('Order').delete().neq('id', impossibleId);
-  await supabase.from('ProductVariant').delete().neq('id', impossibleId);
-  await supabase.from('Product').delete().neq('id', impossibleId);
-  await supabase.from('User').delete().neq('id', impossibleId);
+    // 2. Users. Both share the password 'password123'.
+    console.log('Seeding Users...');
+    const dummyHash = await bcrypt.hash('password123', 10);
 
-  // 2. Seed User
-  console.log('Seeding Users...');
-  // Generate a fresh bcrypt hash for 'password123' dynamically
-  const bcrypt = require('bcrypt');
-  const dummyHash = await bcrypt.hash('password123', 10);
-  const { error: userError } = await supabase.from('User').insert([
-    {
-      id: userId,
-      email: 'test@example.com',
-      firstName: 'Test',
-      lastName: 'User',
-      passwordHash: dummyHash,
-      isAdmin: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: adminId,
-      email: 'admin@example.com',
-      firstName: 'Admin',
-      lastName: 'User',
-      passwordHash: dummyHash,
-      isAdmin: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ]);
-  if (userError) console.error('User Error:', userError);
+    for (const user of [
+      {
+        id: userId,
+        email: 'test@example.com',
+        firstName: 'Test',
+        lastName: 'User',
+        isAdmin: false,
+      },
+      {
+        id: adminId,
+        email: 'admin@example.com',
+        firstName: 'Admin',
+        lastName: 'User',
+        isAdmin: true,
+      },
+    ]) {
+      // userRepo.insert lets the database generate the id; these rows need
+      // fixed ids so the orders below can reference them.
+      await tx.query(
+        `INSERT INTO "User" ("id","email","passwordHash","firstName","lastName","isAdmin")
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [user.id, user.email, dummyHash, user.firstName, user.lastName, user.isAdmin],
+      );
+    }
 
-  // 3. Seed Products
-  console.log('Seeding Products...');
-  for (const p of seedProducts) {
-    const { error: productError } = await supabase.from('Product').insert([p]);
-    if (productError) console.error('Product Error:', productError);
-  }
+    // 3. Products
+    console.log('Seeding Products...');
+    for (const product of seedProducts) {
+      await tx.query(
+        `INSERT INTO "Product"
+           ("id","stripeProductId","name","description","price","images","sizeGuide")
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          product.id,
+          product.stripeProductId,
+          product.name,
+          product.description,
+          product.price,
+          product.images,
+          product.sizeGuide,
+        ],
+      );
+    }
 
-  // 4. Seed Variants
-  console.log('Seeding Variants (with stock & stripeProductIds)...');
-  for (const v of seedVariants) {
-    const { error: variantError } = await supabase.from('ProductVariant').insert([v]);
-    if (variantError) console.error('Variant Error:', variantError);
-  }
+    // 4. Variants
+    console.log('Seeding Variants (with stock & stripeProductIds)...');
+    for (const variant of seedVariants) {
+      await tx.query(
+        `INSERT INTO "ProductVariant"
+           ("id","productId","stripeProductId","size","stock")
+         VALUES ($1,$2,$3,$4,$5)`,
+        [
+          variant.id,
+          variant.productId,
+          variant.stripeProductId,
+          variant.size,
+          variant.stock,
+        ],
+      );
+    }
 
-  // 5. Seed Order
-  console.log('Seeding Order...');
-  const { error: orderError } = await supabase.from('Order').insert([
-    {
+    // 5. Orders. shippingAddress is passed as an object, not a JSON string —
+    //    the column is jsonb and the driver serialises it.
+    console.log('Seeding Orders...');
+    await orderRepo.insert(tx, {
       id: order1Id,
-      userId: userId,
+      userId,
       customerEmail: 'test@example.com',
       stripeSessionId: 'cs_test_dummy123',
       totalAmount: 1230.0,
       status: 'PAID',
-      shippingAddress: JSON.stringify({
+      shippingAddress: {
         city: 'New York',
         country: 'US',
         line1: '123 Main St',
         postal_code: '10001',
         state: 'NY',
-      }),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
+      },
+    });
+
+    await orderRepo.insert(tx, {
       id: order2Id,
       userId: adminId,
       customerEmail: 'admin@example.com',
       stripeSessionId: 'cs_test_dummy456',
       totalAmount: 600.0,
       status: 'SHIPPED',
-      shippingAddress: JSON.stringify({
+      shippingAddress: {
         city: 'Los Angeles',
         country: 'US',
         line1: '456 Oak St',
         postal_code: '90001',
         state: 'CA',
-      }),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ]);
-  if (orderError) console.error('Order Error:', orderError);
+      },
+    });
 
-  // 6. Seed Order Items
-  console.log('Seeding Order Items...');
-  const { error: itemError } = await supabase.from('OrderItem').insert([
-    {
-      id: uuidv4(),
-      orderId: order1Id,
-      variantId: var1mId,
-      quantity: 1,
-      priceAtSale: 630.0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }, // 1 Isaac Pant (M)
-    {
-      id: uuidv4(),
-      orderId: order1Id,
-      variantId: var2mId,
-      quantity: 1,
-      priceAtSale: 600.0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }, // 1 Arlo Windbreaker (M)
-    {
-      id: uuidv4(),
-      orderId: order2Id,
-      variantId: var2mId,
-      quantity: 1,
-      priceAtSale: 600.0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }, // 1 Arlo Windbreaker (M)
-  ]);
-  if (itemError) console.error('Item Error:', itemError);
+    // 6. Order items
+    console.log('Seeding Order Items...');
+    for (const item of [
+      { orderId: order1Id, variantId: var1mId, quantity: 1, priceAtSale: 630.0 },
+      { orderId: order1Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0 },
+      { orderId: order2Id, variantId: var2mId, quantity: 1, priceAtSale: 600.0 },
+    ]) {
+      await orderRepo.insertItem(tx, item);
+    }
 
-  console.log('Seeding finished successfully!');
+    // Referenced so the fixed ids above are not flagged as unused, and so the
+    // seed fails loudly if a repository lookup regresses.
+    const seededUser = await userRepo.findByEmail(tx, 'TEST@EXAMPLE.COM');
+    if (!seededUser) throw new Error('Case-insensitive user lookup failed');
+
+    const seededProducts = await productRepo.findAllWithVariants(tx);
+    console.log(
+      `Seeded ${seededProducts.length} products, ` +
+        `${seededProducts.reduce((n, p) => n + p.ProductVariant.length, 0)} variants`,
+    );
+  });
+
+  console.log('Seeding finished.');
 }
 
-main().catch(console.error);
+main()
+  .catch((error) => {
+    console.error('Seeding failed:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => pool.end());

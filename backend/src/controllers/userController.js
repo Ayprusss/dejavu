@@ -1,36 +1,13 @@
-const supabase = require('../supabase');
+const pool = require('../db/pool');
+const orderRepo = require('../repositories/orderRepo');
 
 const getUserOrders = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
-      .from('Order')
-      .select(
-        `
-                *,
-                OrderItem (
-                    id,
-                    quantity,
-                    priceAtSale,
-                    ProductVariant (
-                        id,
-                        size,
-                        Product (
-                            id,
-                            name,
-                            images
-                        )
-                    )
-                )
-            `,
-      )
-      .eq('userId', userId)
-      .order('createdAt', { ascending: false });
+    const orders = await orderRepo.findByUserIdWithItems(pool, userId);
 
-    if (error) throw error;
-
-    res.status(200).json(data);
+    res.status(200).json(orders);
   } catch (error) {
     console.error('Error fetching user orders:', error.message);
     res.status(500).json({ error: error.message });

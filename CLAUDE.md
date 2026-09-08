@@ -27,6 +27,19 @@ npm start        # node with dotenv (production)
 
 The backend defaults to port `5000`. The frontend reads `VITE_API_URL` from its `.env`; it falls back to `http://localhost:5000`.
 
+### Database (`backend/`)
+```bash
+docker compose up -d db     # local Postgres 16 on :5432
+npm run migrate:up          # apply pending migrations
+npm run migrate:down        # roll back the last one
+npm run migrate:redo        # all the way down, then back up
+```
+
+Migrations live in `backend/migrations/` as plain `.sql` files split by
+`-- Up Migration` / `-- Down Migration` comments, run by `node-pg-migrate`
+against `DATABASE_URL`. Local, CI and (from Phase 6) RDS all run this same set —
+never edit an applied migration, add a new one.
+
 ### Stripe webhook testing (local)
 ```bash
 stripe listen --forward-to localhost:5000/api/webhooks/stripe
@@ -71,7 +84,21 @@ Express app is assembled in `src/app.js` and started in `src/server.js`.
 
 JWT tokens are issued on register/login and carry `{ id, isAdmin }`. The `authMiddleware.js` exports `verifyToken` (validates the JWT) and `requireAdmin` (checks `req.user.isAdmin`). All `/api/admin` routes use both. The frontend stores the token in `localStorage` under `adminToken`.
 
-### Supabase schema (key tables)
+### Data access
+
+`src/db/pool.js` is the single `pg.Pool`; `src/db/withTransaction.js` wraps
+BEGIN/COMMIT/ROLLBACK. Every function in `src/repositories/` takes an **executor**
+as its first argument — the pool for a standalone statement, or a transaction
+client to join a caller's transaction. Controllers never build SQL.
+
+`pool.js` parses Postgres `numeric` into a JS number rather than the driver's
+default string, because the frontend consumes prices as numbers.
+
+The repositories reproduce the exact nested JSON that PostgREST used to return
+(`OrderItem` array, `ProductVariant`/`Product`/`User` objects). Those key names
+are a frontend contract — `backend/tests/fixtures/apiShapes.js` records them.
+
+### Database schema (key tables)
 
 - **User** — `id`, `email`, `passwordHash`, `firstName`, `lastName`, `isAdmin`
 - **Product** — `id`, `stripeProductId`, `name`, `price`, `status`, `images` (array)
@@ -92,13 +119,13 @@ On registration, `authController` links any prior guest `Order` rows that match 
 
 **Backend** (`backend/.env`):
 ```
-SUPABASE_URL=
-SUPABASE_KEY=           # service role key
+DATABASE_URL=           # postgres://user:pass@host:5432/db
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 JWT_SECRET=
 FRONTEND_URL=           # used for Stripe redirect URLs (default: https://dejavustudio.xyz)
 PORT=                   # optional, default 5000
+PG_POOL_MAX=            # optional, default 10
 ```
 
 **Frontend** (`dejavu/.env`):

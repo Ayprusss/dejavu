@@ -17,8 +17,8 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 |---|---|---|
 | **A** | 0 — Remediation & hygiene | Keys rotated, repo clean, app fails fast without `JWT_SECRET` |
 | **B** | 1 — Test harness + CI gate | Red CI blocks a PR merge |
-| **C1** | 2a — Migrations + `pg` layer scaffolding | `docker compose up` runs local Postgres; migrations up/down clean |
-| **C2** | 2b — Rewrite the 20 controller call sites | Zero `supabase` imports; storefront works end to end locally |
+| **C1** | 2a — Migrations + `pg` layer scaffolding **[x]** | `docker compose up` runs local Postgres; migrations up/down clean |
+| **C2** | 2b — Rewrite the 20 controller call sites **[x]** | Zero `supabase` imports; storefront works end to end locally |
 | **D** | 3 — Correctness fixes | Webhook is transactional; stock decrements atomically |
 | **E** | 4 — Integration + E2E in CI | Idempotency and no-oversell proven by tests |
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
@@ -28,7 +28,9 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 
 Phase 2 is split because it is by far the largest — the scaffolding is low-risk and the rewrite is where the bugs hide, so they get separate review. Batch E is a genuine stopping point: the resume value of Phases 0–4 is high and the cost is nothing, so it's a reasonable place to pause and reassess appetite for the AWS half.
 
-### What the codebase actually looks like today
+### What the codebase looked like at the start of this plan
+
+*Kept as the before-picture. Phases 0–2 have since changed every row.*
 
 | Area | State |
 |---|---|
@@ -52,10 +54,10 @@ Phase 2 is split because it is by far the largest — the scaffolding is low-ris
 ### Sequencing
 
 ```
-Phase 0  Remediation & hygiene        BLOCKER      hours
-Phase 1  Test harness + CI gate       roadmap #1   ~1 week
-Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   <- largest single phase
-Phase 3  Correctness fixes            roadmap #5a  ~1 week
+Phase 0  Remediation & hygiene        BLOCKER      hours        [done]
+Phase 1  Test harness + CI gate       roadmap #1   ~1 week      [done]
+Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   [done] <- largest single phase
+Phase 3  Correctness fixes            roadmap #5a  ~1 week      <- next
 Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week
 -- CI/CD complete; everything above costs $0 --
 Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week
@@ -102,17 +104,17 @@ Delete `backend/supatest.js`, the empty `backend/README.md` (or write one), the 
 
 ---
 
-# Phase 1 — Test Harness + CI Gate
+# Phase 1 — Test Harness + CI Gate [x]
 
 *Roadmap #1.* Goal is a green gate on `main` and tests for the logic that **survives the Phase 2 rewrite** — no throwaway work.
 
-### Tooling
+### Tooling [x]
 
 **Vitest** for both workspaces (one runner, one config idiom; handles the backend's CommonJS fine) plus **supertest** on the backend. `backend/src/app.js:50` already exports the app without listening, so no refactor is needed to start.
 
 Add to the backend: ESLint flat config (it has none today) and Prettier across both workspaces. Note the frontend has **React Compiler enabled** via `babel-plugin-react-compiler` — it is sensitive to hook-rule violations, so keep `eslint-plugin-react-hooks` gating.
 
-### What to test now
+### What to test now [x]
 
 Chosen because none of it touches the data layer, so all of it survives Phase 2:
 
@@ -126,7 +128,7 @@ Chosen because none of it touches the data layer, so all of it survives Phase 2:
 
 **Server-side price integrity** — assert that a `price` field in the request body is ignored. It already is (`checkoutController.js:14-17` narrows to `{ variantId, quantity }`), and a test locks that in.
 
-### CI workflow
+### CI workflow [x]
 
 `.github/workflows/ci.yml`, on PR and push to `main`. Jobs: `lint` · `test-backend` (Node 20 + 22 matrix) · `test-frontend` · `build-frontend` · `gitleaks`. `actions/setup-node` with `cache: npm` keyed per workspace.
 
@@ -138,7 +140,7 @@ Enable branch protection on `main` requiring these checks. **This changes your w
 
 ---
 
-# Phase 2 — Postgres Data Layer + Versioned Migrations
+# Phase 2 — Postgres Data Layer + Versioned Migrations [x]
 
 *Roadmap #2, the non-AWS half.* The largest phase. Nothing in Phase 3 is possible without it.
 
@@ -146,11 +148,11 @@ Enable branch protection on `main` requiring these checks. **This changes your w
 
 Three reasons, all defensible: the schema uses quoted camelCase identifiers throughout, which fights every ORM; the whole point of Phase 3 is explicit transactions and `UPDATE ... WHERE stock >= $n`, and an ORM hides exactly the mechanism that's interesting; and Prisma's query engine binary is a poor fit for the Lambda package in Phase 6. There is also a leftover `_prisma_migrations` table in `init.sql` from an ORM that was already ripped out once.
 
-### Local Postgres
+### Local Postgres [x]
 
 Add a `db` service (`postgres:16-alpine`) to `docker-compose.yml` with `depends_on: { db: { condition: service_healthy } }`. Local, CI, and RDS then all run the same schema from the same migrations — which is the actual point.
 
-### Migrations
+### Migrations [x]
 
 Convert `init-scripts/init.sql` into `backend/migrations/`, each with an `up` and a `down`:
 
@@ -166,7 +168,7 @@ Convert `init-scripts/init.sql` into `backend/migrations/`, each with an `up` an
 
 Keep the double-quoted camelCase identifiers throughout — the rewrite has to match.
 
-### Data-access layer
+### Data-access layer [x]
 
 ```
 backend/src/db/pool.js              pg.Pool; max configurable (load-bearing in Phase 6)
@@ -184,17 +186,33 @@ Then rewrite all 20 call sites. **Three are genuinely hard** — the deep PostgR
 
 Also port `backend/scripts/seed.js` and `fix-image-urls.js` (they build their own duplicate Supabase clients) and delete `backend/src/supabase.js`.
 
+### What Phase 2 actually turned up
+
+Three things the plan did not anticipate, all handled:
+
+**`numeric` changes JavaScript type across the driver swap.** `supabase-js` returned JSON numbers; node-postgres returns `numeric` (OID 1700) as a *string*, to preserve precision. `Account.jsx:105` calls `order.totalAmount.toFixed(2)` directly, so this would have crashed the account page rather than merely mis-rendering. `db/pool.js` registers a type parser back to `Number` — safe here because prices are decimal dollars well inside exact double range and money is converted to integer cents by `lib/money.toCents` before it is charged.
+
+**The nested PostgREST key names are a frontend contract.** The plan flagged the three deep selects as *hard*, but the sharper point is that `OrderItem[]`, `ProductVariant`/`Product`/`User`, `User: null` for guests and `OrderItem: []` for empty are all destructured directly in `Account.jsx`, `Shop.jsx`, `ShopItem.jsx`, `CheckoutSuccess.jsx` and `AdminDashboard.jsx`. The repositories rebuild them exactly; `backend/tests/fixtures/apiShapes.js` records the shapes, captured from a live run, so Phase 4 asserts against something concrete.
+
+**Two Phase 3 items landed early, one for free.** Migration 0003's `NOT NULL` was not in the plan — without it `CHECK (stock >= 0)` is toothless, since `NULL >= 0` is NULL and a CHECK accepts that. And `shippingAddress` is fixed as a *side effect* of the driver change, not a decision: the Supabase client `JSON.stringify`'d the object into a `jsonb` column, storing a JSON string scalar; node-postgres serialises the object itself. Verified over HTTP — `order.shippingAddress.city` now reads back.
+
+Deliberately **not** done in 2b, so Phase 3 owns them with tests: the webhook stays non-transactional, its idempotency probe stays a read-then-write, stock stays read-modify-write, and guest-order linking stays automatic and unverified. `webhookController.js` carries a header comment listing each one.
+
 ### Testing strategy note
 
 This is the answer to the roadmap's "why unit-test controllers with a mocked DB when you also run integration tests?" — **we deliberately don't.** Mocking `supabase-js`'s chained builder is high-effort, high-brittleness, and would all be thrown away here anyway. Unit tests cover pure logic (Phase 1); everything touching the database is covered by integration tests against real Postgres (Phase 4). Deciding *not* to mock the database is a stronger answer than a mock layer nobody trusts.
 
-**Exit criteria:** `docker compose up` gives a working stack with local Postgres; zero `@supabase/supabase-js` imports remain; migrations run forward and backward cleanly.
+**Exit criteria [x]:** `docker compose up` gives a working stack with local Postgres; zero `@supabase/supabase-js` imports remain; migrations run forward and backward cleanly.
+
+Verified: `migrate up -> down 0 -> up` clean against `postgres:16-alpine`; the containerised backend serves seeded data from the containerised database; `npm run seed` runs in one transaction and seeds 2 products / 6 variants sharing Stripe product ids (which migration 0002 is what makes possible); 44 HTTP-level assertions over every ported endpoint pass, covering the nested shapes, case-insensitive login, guest-order linking, `404` rather than `500` for a non-UUID product id, and `400` rather than `500` for negative stock. `@supabase/supabase-js` is uninstalled and `src/supabase.js` deleted; `init-scripts/` and `supabase/` are gone, along with the root `supabase` CLI dependency.
 
 ---
 
 # Phase 3 — Correctness Fixes
 
 *Roadmap #5's substance.* Every fix here is scale-independent and each one has a test in Phase 4 that proves it.
+
+**Already landed in Phase 2b, so skip them here:** the `shippingAddress` jsonb double-encoding (fixed by the driver change), and the schema half of the null-stock hole (migration 0003's `NOT NULL` + `CHECK`). The `checkoutController` guard at `:37` that reads `typeof variant.stock === 'number'` is now dead code rather than a live bug, but still wants removing.
 
 ### Webhook: one transaction, one event, one order
 
@@ -343,9 +361,9 @@ Each phase has a concrete gate:
 
 | Phase | How to verify |
 |---|---|
-| 0 | `git ls-files \| grep -c node_modules` → 0. App refuses to boot without `JWT_SECRET`. GitHub secret scanning shows no active alerts. |
-| 1 | Open a PR with a deliberately failing test — merge is blocked. `npm test` green in both workspaces. |
-| 2 | `docker compose up` → migrate → seed → browse the storefront end to end. `npm run migrate:down` unwinds cleanly. `grep -r supabase backend/src` → nothing. |
+| 0 | **[x]** `git ls-files \| grep -c node_modules` → 0. App refuses to boot without `JWT_SECRET`. GitHub secret scanning shows no active alerts. |
+| 1 | **[x]** Open a PR with a deliberately failing test — merge is blocked. `npm test` green in both workspaces. |
+| 2 | **[x]** `docker compose up` → migrate → seed → browse the storefront end to end. `npm run migrate:down` unwinds cleanly. `grep -r supabase backend/src` → nothing. |
 | 3 | Manually replay a webhook twice against local Postgres → one order. `stripe trigger checkout.session.completed` against a local `stripe listen`. |
 | 4 | Idempotency, oversell, and out-of-order tests green in CI against a real Postgres service container. Playwright trace artifact on a deliberate failure. |
 | 5 | `terraform plan` runs on a PR with no AWS keys in the repo. Confirm the role cannot be assumed from a fork. |

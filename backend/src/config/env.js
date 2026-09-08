@@ -10,10 +10,8 @@
  * file to find — the variables come from the environment itself.
  */
 
-// SUPABASE_* are required only until the Postgres migration lands (Phase 2).
 const REQUIRED = [
-  'SUPABASE_URL',
-  'SUPABASE_KEY',
+  'DATABASE_URL',
   'JWT_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -42,6 +40,15 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   );
 }
 
+// One connection per warm Lambda instance in Phase 6, so this has to be tunable
+// per environment rather than baked in.
+const poolMax = Number(process.env.PG_POOL_MAX ?? 10);
+if (!Number.isInteger(poolMax) || poolMax < 1) {
+  problems.push(
+    `PG_POOL_MAX must be a positive integer (got "${process.env.PG_POOL_MAX}")`,
+  );
+}
+
 if (problems.length > 0) {
   throw new Error(`Invalid environment configuration:\n  - ${problems.join('\n  - ')}`);
 }
@@ -59,8 +66,8 @@ module.exports = Object.freeze({
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: port,
 
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_KEY: process.env.SUPABASE_KEY,
+  DATABASE_URL: process.env.DATABASE_URL,
+  PG_POOL_MAX: poolMax,
 
   JWT_SECRET: process.env.JWT_SECRET,
 
