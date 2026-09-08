@@ -37,7 +37,25 @@ const parseCartItems = (items) => {
     return { ok: false, message: INVALID_ITEM_MESSAGE };
   }
 
-  return { ok: true, items: parsed };
+  // Aggregate duplicate lines before anything downstream sees them.
+  //
+  // Stock is validated per line, so `[{v,3},{v,3}]` against a stock of 5 used
+  // to pass twice and sell 6. Merging here means the check runs once against
+  // the real total. Insertion order is preserved so the Stripe line items stay
+  // in the order the customer built the cart.
+  const merged = new Map();
+
+  for (const item of parsed) {
+    const existing = merged.get(item.variantId);
+
+    if (existing) {
+      existing.quantity += item.quantity;
+    } else {
+      merged.set(item.variantId, { ...item });
+    }
+  }
+
+  return { ok: true, items: [...merged.values()] };
 };
 
 module.exports = { parseCartItems, EMPTY_CART_MESSAGE, INVALID_ITEM_MESSAGE };

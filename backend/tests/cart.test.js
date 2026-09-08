@@ -94,17 +94,47 @@ describe('parseCartItems — server-side price integrity', () => {
 });
 
 describe('parseCartItems — duplicate lines', () => {
-  // Phase 3 aggregates duplicate lines by variantId before stock validation.
-  // Until then two lines for the same variant are each validated in isolation,
-  // so a cart can pass validation and still oversell.
-  it.todo('aggregates duplicate variantIds into a single line');
-
-  it('currently passes duplicate lines through unmerged', () => {
+  // The oversell this prevents: two lines of 3 against a stock of 5 each pass
+  // an isolated check, and the cart sells 6.
+  it('aggregates duplicate variantIds into a single line', () => {
     const result = parseCartItems([
       { variantId: 'v1', quantity: 3 },
       { variantId: 'v1', quantity: 3 },
     ]);
     expect(result.ok).toBe(true);
-    expect(result.items).toHaveLength(2);
+    expect(result.items).toEqual([{ variantId: 'v1', quantity: 6 }]);
+  });
+
+  it('leaves distinct variants alone', () => {
+    const result = parseCartItems([
+      { variantId: 'v1', quantity: 1 },
+      { variantId: 'v2', quantity: 2 },
+    ]);
+    expect(result.items).toEqual([
+      { variantId: 'v1', quantity: 1 },
+      { variantId: 'v2', quantity: 2 },
+    ]);
+  });
+
+  it('merges three or more lines for the same variant', () => {
+    const result = parseCartItems([
+      { variantId: 'v1', quantity: 1 },
+      { variantId: 'v2', quantity: 5 },
+      { variantId: 'v1', quantity: 2 },
+      { variantId: 'v1', quantity: 4 },
+    ]);
+    expect(result.items).toEqual([
+      { variantId: 'v1', quantity: 7 },
+      { variantId: 'v2', quantity: 5 },
+    ]);
+  });
+
+  it('preserves the order the cart was built in', () => {
+    const result = parseCartItems([
+      { variantId: 'v2', quantity: 1 },
+      { variantId: 'v1', quantity: 1 },
+      { variantId: 'v2', quantity: 1 },
+    ]);
+    expect(result.items.map((item) => item.variantId)).toEqual(['v2', 'v1']);
   });
 });

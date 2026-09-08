@@ -1,3 +1,5 @@
+const logger = require('../lib/logger');
+
 /**
  * Run `fn` inside a single database transaction.
  *
@@ -26,7 +28,10 @@ const withTransaction = async (pool, fn) => {
     try {
       await client.query('ROLLBACK');
     } catch (rollbackError) {
-      console.error('Failed to roll back transaction:', rollbackError);
+      logger.error(
+        { event: 'db.rollback_failed', err: rollbackError },
+        'Failed to roll back transaction',
+      );
     }
     throw error;
   } finally {

@@ -76,9 +76,15 @@ Express app is assembled in `src/app.js` and started in `src/server.js`.
 | `POST /api/checkout` | `checkoutController` |
 | `POST /api/webhooks/stripe` | `webhookController` |
 | `POST/PUT /api/admin/*` | `adminController` (requires JWT + `isAdmin`) |
-| `GET /api/user/*` | `userController` (requires JWT) |
+| `GET /api/user/*`, `POST /api/user/orders/claim` | `userController` (requires JWT) |
 
-**Critical ordering:** The Stripe webhook route (`/api/webhooks/stripe`) must be registered in `app.js` **before** `express.json()` because Stripe signature verification requires the raw request body.
+**Critical ordering:** The Stripe webhook route (`/api/webhooks/stripe`) must be registered in `app.js` **before** `express.json()` because Stripe signature verification requires the raw request body. Never hoist a global body parser above it.
+
+**Middleware:** `helmet` → `cors` → `pino-http` → raw webhook route → `express.json()` → routes → 404 → error handler. `express-rate-limit` guards `/api/auth/login` (10 failures / 15 min) and `/api/checkout` (30 / 15 min); both are in-memory, so the budget is per instance.
+
+**Health checks:** `/api/status` is liveness and never touches the database — it must keep answering 200 while Postgres is down, or a database blip gets the container restarted. `/api/ready` is readiness and does ping the database, returning 503 when it cannot.
+
+**Logging:** `src/lib/logger.js` (pino), JSON one line per event. Every alertable event carries a stable dotted `event` key (`checkout.oversell`, `order.created`, `webhook.duplicate`, …) because CloudWatch metric filters match on those names — renaming one breaks an alarm. Errors go through a bounded serializer: node-postgres attaches an entire `Client` to its errors, and the default pino serializer logs all of it.
 
 ### Auth
 
@@ -113,7 +119,11 @@ On registration, `authController` links any prior guest `Order` rows that match 
 1. Frontend sends cart (`[{ variantId, quantity }]`) to `POST /api/checkout`.
 2. `checkoutController` validates stock, builds Stripe `line_items` with `price_data` (dynamic pricing), and returns a `checkoutUrl`.
 3. On payment, Stripe POSTs `checkout.session.completed` to `/api/webhooks/stripe`.
-4. `webhookController` verifies the signature, creates `Order` + `OrderItem` rows, and decrements `ProductVariant.stock`. Idempotency is enforced by checking for an existing `Order` with the same `stripeSessionId`.
+4. `webhookController` verifies the signature, then does everything else in **one transaction**: claim the event id in `StripeEvent` (`INSERT ... ON CONFLICT DO NOTHING`), insert the `Order` and its `OrderItem` rows, and decrement stock with `UPDATE ... WHERE stock >= $n`. Any failure rolls the whole thing back, including the event claim, so the delivery stays retryable.
+
+**Webhook response semantics:** 400 on a bad signature; 200 for unhandled event types and for duplicates; 200 for an oversell (deterministic — retrying cannot help — logged as `checkout.oversell` for a human to refund); 500 only for genuinely retryable failures, which is the only case where Stripe should redeliver.
+
+**Guest orders** are claimed explicitly via `POST /api/user/orders/claim` with the `stripeSessionId` from the buyer's own success page. Registration does **not** link orders by email — that let anyone who knew an address inherit that person's order history.
 
 ## Environment Variables
 
@@ -126,6 +136,11 @@ JWT_SECRET=
 FRONTEND_URL=           # used for Stripe redirect URLs (default: https://dejavustudio.xyz)
 PORT=                   # optional, default 5000
 PG_POOL_MAX=            # optional, default 10
+LOG_LEVEL=              # optional, default info (silent under NODE_ENV=test)
+TRUST_PROXY=            # optional, default 0 — proxy hop count; the rate
+                        # limiters key on client IP, so a wrong value here
+                        # either merges every client into one bucket or lets
+                        # X-Forwarded-For be spoofed for a fresh one
 ```
 
 **Frontend** (`dejavu/.env`):

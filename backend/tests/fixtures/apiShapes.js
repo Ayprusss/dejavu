@@ -119,8 +119,19 @@ const ACCOUNT_ORDER = {
   ],
 };
 
-/** GET /api/checkout/session/:sessionId — orderRepo.findByStripeSessionIdWithItems */
-const CHECKOUT_ORDER = {
+/**
+ * GET /api/checkout/session/:sessionId, **for the authenticated owner**.
+ *
+ * Phase 3 split this endpoint's response in two. The record carries the
+ * customer's email and full shipping address, and the endpoint is
+ * unauthenticated — a leaked `cs_...` id (a shared URL, a referrer header)
+ * used to hand a stranger that PII. Owners still get everything below;
+ * everyone else gets CHECKOUT_ORDER_PUBLIC.
+ *
+ * `userId` is selected from the database to make the ownership comparison but
+ * is stripped before the response, so it appears in neither shape.
+ */
+const CHECKOUT_ORDER_OWNER = {
   id: 'b633f0d9-e5e2-47f1-971d-9f358cc6cb50',
   stripeSessionId: 'cs_test_123',
   customerEmail: 'Test@Example.com',
@@ -145,11 +156,30 @@ const CHECKOUT_ORDER = {
   ],
 };
 
+/**
+ * GET /api/checkout/session/:sessionId, for anonymous and non-owner callers.
+ *
+ * Enough for a guest's success page to confirm the purchase — CheckoutSuccess
+ * renders the total and falls back to an empty item list — without disclosing
+ * who bought it or where it ships.
+ */
+const CHECKOUT_ORDER_PUBLIC = {
+  id: 'b633f0d9-e5e2-47f1-971d-9f358cc6cb50',
+  stripeSessionId: 'cs_test_123',
+  status: 'PAID',
+  totalAmount: 1260,
+  createdAt: '2026-09-08T17:09:14.282Z',
+  // Summed quantities, so the buyer sees the order is complete without the
+  // line items themselves.
+  itemCount: 2,
+};
+
 module.exports = {
   PRODUCT_WITH_VARIANTS,
   VARIANT_WITH_PRODUCT,
   ADMIN_ORDER,
   ADMIN_ORDER_GUEST,
   ACCOUNT_ORDER,
-  CHECKOUT_ORDER,
+  CHECKOUT_ORDER_OWNER,
+  CHECKOUT_ORDER_PUBLIC,
 };

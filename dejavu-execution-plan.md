@@ -19,7 +19,7 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 | **B** | 1 — Test harness + CI gate | Red CI blocks a PR merge |
 | **C1** | 2a — Migrations + `pg` layer scaffolding **[x]** | `docker compose up` runs local Postgres; migrations up/down clean |
 | **C2** | 2b — Rewrite the 20 controller call sites **[x]** | Zero `supabase` imports; storefront works end to end locally |
-| **D** | 3 — Correctness fixes | Webhook is transactional; stock decrements atomically |
+| **D** | 3 — Correctness fixes **[x]** | Webhook is transactional; stock decrements atomically |
 | **E** | 4 — Integration + E2E in CI | Idempotency and no-oversell proven by tests |
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
 | **F** | 5 — Terraform + OIDC + secrets | `plan` on PR with no AWS keys in the repo |
@@ -57,8 +57,8 @@ Phase 2 is split because it is by far the largest — the scaffolding is low-ris
 Phase 0  Remediation & hygiene        BLOCKER      hours        [done]
 Phase 1  Test harness + CI gate       roadmap #1   ~1 week      [done]
 Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   [done] <- largest single phase
-Phase 3  Correctness fixes            roadmap #5a  ~1 week      <- next
-Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week
+Phase 3  Correctness fixes            roadmap #5a  ~1 week      [done]
+Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      <- next
 -- CI/CD complete; everything above costs $0 --
 Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week
 Phase 6  RDS + Lambda deploy          roadmap #2b/#4
@@ -208,13 +208,13 @@ Verified: `migrate up -> down 0 -> up` clean against `postgres:16-alpine`; the c
 
 ---
 
-# Phase 3 — Correctness Fixes
+# Phase 3 — Correctness Fixes [x]
 
 *Roadmap #5's substance.* Every fix here is scale-independent and each one has a test in Phase 4 that proves it.
 
 **Already landed in Phase 2b, so skip them here:** the `shippingAddress` jsonb double-encoding (fixed by the driver change), and the schema half of the null-stock hole (migration 0003's `NOT NULL` + `CHECK`). The `checkoutController` guard at `:37` that reads `typeof variant.stock === 'number'` is now dead code rather than a live bug, but still wants removing.
 
-### Webhook: one transaction, one event, one order
+### Webhook: one transaction, one event, one order [x]
 
 `webhookController.js` currently makes `1 + 2N` independent HTTP round-trips with **no transaction and no compensating rollback**. A crash midway leaves a `PAID` order with partial items and partially-decremented stock — and because the order row now exists, every retry hits the idempotency check at `:47` and **skips**, cementing the partial state permanently.
 
@@ -225,14 +225,14 @@ Verified: `migrate up -> down 0 -> up` clean against `postgres:16-alpine`; the c
 - Fix `shippingAddress`: `:83-85` calls `JSON.stringify` before inserting into a **`jsonb`** column, storing a JSON *string scalar*. Any consumer doing `order.shippingAddress.city` gets `undefined`. Pass the object.
 - Response semantics: 200 once committed, 200 for unhandled event types, 500 **only** for genuinely retryable failures.
 
-### Checkout
+### Checkout [x]
 
 - Attach `client_reference_id` (the user's ID when authenticated) to the Stripe session. This is why the webhook currently has to reverse-look-up the user by email at `:62-71`.
 - Pass a Stripe idempotency key.
 - Fix duplicate cart lines: stock validation at `:60-64` checks each line independently, so `[{v,3},{v,3}]` against stock 5 passes both checks and sells 6. Aggregate by `variantId` first.
 - `typeof variant.stock === "number"` means a `null` stock **skips validation entirely** and sells unlimited. Migration 0003's `CHECK` plus a `NOT NULL DEFAULT 0` closes this.
 
-### Auth
+### Auth [x]
 
 **Guest-order linking is the most serious flaw in the codebase.** `authController.js:46-60` claims every past guest order matching an email string, on nothing more than registration, with no verification. Anyone who knows a buyer's email can register with it and inherit that person's order history *and shipping addresses* via `GET /api/user/orders`.
 
@@ -240,17 +240,29 @@ Fix without needing email infrastructure: **replace automatic linking with an ex
 
 Related: `GET /api/checkout/session/:sessionId` has **no authorization at all** — anyone with a `cs_...` id reads customer email, total, and full shipping address. Session IDs are high-entropy, so it's security-by-obscurity over an unauthenticated PII read. Return minimal fields (status, total, item count) to anonymous callers; full address only to the authenticated owner.
 
-### Production hardening
+### Production hardening [x]
 
 `helmet` · `express-rate-limit` on `/api/auth/login` (unlimited credential stuffing today — no lockout, no attempt counter) and on `/api/checkout` (unauthenticated, unthrottled, creates Stripe objects on every call) · centralized `(err, req, res, next)` error middleware · 404 handler · `trust proxy` · `CORS_ORIGINS` from env (`app.js:12-16` hardcodes origins including `http://localhost:5173`, so adding staging currently requires a code change).
 
 **Do not touch the middleware order in `app.js`.** `express.raw()` at `:22` mounted before `express.json()` at `:24` is correct and load-bearing — any refactor that hoists a global body parser breaks Stripe signature verification.
 
-### Operational readiness
+### Operational readiness [x]
 
 - **Graceful shutdown** in `server.js` — SIGTERM → `server.close()` → `pool.end()`. There is none today.
 - **Structured logging** — `pino` + `pino-http` with request IDs, replacing ~20 bare `console.log`/`console.error` sites. Needed before CloudWatch is useful.
 - **Split the health check** — keep `/api/status` as liveness (it reports healthy while the database is unreachable, which is correct for liveness), add `/api/ready` that pings the DB. The distinction matters in Phase 6: a readiness check that fails on a DB blip takes down a service that could still serve cached reads.
+
+### What Phase 3 actually turned up
+
+**The oversell response is a design decision the plan left open.** "Abort the transaction" says what to do with the data, not what to tell Stripe. A shortage is *deterministic* — replaying the event hits the same wall — so 500 would put Stripe into a retry loop against a fact that will not change. It answers 200 and logs `checkout.oversell` at error level with the session and variant, which is what Phase 7's alarm matches on. The honest caveat: the customer has been charged and nothing was recorded, so this needs a human and a refund. A production system would refund automatically; saying so is better than pretending the rollback finished the job.
+
+**The idempotency key belongs to the client, not the server.** Deriving one server-side from the cart contents cannot distinguish a double-submit from a customer deliberately buying the same thing twice, and would silently hand the second buyer the first session. `POST /api/checkout` accepts an optional `idempotencyKey` and generates one when absent — correct use of the Stripe API either way, with real deduplication available to a frontend that opts in. **Frontend follow-up:** `App.jsx` should generate a key per checkout attempt and reuse it across retries.
+
+**pino's default error serializer is unusable with node-postgres.** It walks an error's own enumerable properties, and a `DatabaseError` carries the entire `Client` — connection parameters, the full type table. One connection blip logged several kilobytes on a single line. `lib/logger.js` uses a bounded serializer keeping type, message, stack, `code`, `constraint`, `detail`, `severity`, `status`. Verified: the same event now logs 392 characters. At CloudWatch's per-GB ingest this is the difference between a log and a bill.
+
+**supertest cannot send a raw body the obvious way.** `.send(Buffer.from(payload))` with a JSON content type makes superagent serialise the *Buffer object* — the handler receives `{"type":"Buffer","data":[...]}` and every signature check fails. `.send(payloadString)` transmits the exact bytes. This is a trap for Phase 4's webhook fixtures, and it looks exactly like a broken signature implementation when you hit it.
+
+**Deliberately not done:** the checkout stock check is left in place as an advisory fast-fail for the customer, but it is no longer load-bearing — the conditional decrement in the webhook is the authority, because stock can change between checkout and payment.
 
 ---
 
@@ -280,6 +292,8 @@ Playwright over the compose stack: browse → cart → checkout → webhook → 
 **Keep the Stripe-hosted-checkout leg in a separate non-blocking job.** Driving Stripe's hosted page with test card `4242...` is inherently flaky and a flaky required check trains you to ignore CI. The blocking E2E job stubs the redirect; the full-path job runs alongside and reports.
 
 **Exit criteria:** idempotency and no-oversell are proven by tests, not by argument.
+
+*Phase 3 verified these by probe against real Postgres — replay x3 and concurrent replay both yield exactly one order and one decrement; oversell rolls back everything including the event claim; a multi-line order whose second line oversells rolls back the first line's decrement. Phase 4's job is to turn those probes into the committed suite with the harness (service container, TRUNCATE isolation) behind them.*
 
 ---
 

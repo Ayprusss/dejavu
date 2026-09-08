@@ -2,8 +2,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const userRepo = require('../repositories/userRepo');
-const orderRepo = require('../repositories/orderRepo');
 const env = require('../config/env');
+const logger = require('../lib/logger');
 
 /**
  * Addresses are stored lowercased and looked up on `lower(email)`, matching the
@@ -28,7 +28,10 @@ const register = async (req, res) => {
       return res.status(409).json({ message: 'User already exists' });
     }
   } catch (error) {
-    console.error('Error thrown when checking for existing user: ', error);
+    logger.error(
+      { event: 'auth.register_lookup_failed', err: error },
+      'Error checking for existing user',
+    );
     return res.status(500).json({ message: 'Internal server error' });
   }
 
@@ -43,23 +46,14 @@ const register = async (req, res) => {
       isAdmin: false,
     });
 
-    // Link any past guest orders to this newly created account.
+    // Guest orders are NOT linked here any more.
     //
-    // This is unverified — anyone who knows a buyer's email can register with
-    // it and inherit that person's order history and shipping addresses.
-    // Phase 3 replaces it with an explicit claim against a stripeSessionId,
-    // which only the real buyer has. Ported as-is so that change lands as a
-    // deliberate diff with a test, rather than buried in the data-layer swap.
-    try {
-      const linked = await orderRepo.linkGuestOrdersToUser(pool, {
-        email: normalizedEmail,
-        userId: newUser.id,
-      });
-
-      console.log(`Linked ${linked} past guest order(s) for ${normalizedEmail}`);
-    } catch (linkError) {
-      console.error('Failed to link existing guest orders to new user:', linkError);
-    }
+    // Claiming every order that shared an email address meant anyone who knew a
+    // buyer's address could register with it and inherit that buyer's order
+    // history and shipping addresses — no verification, just registration.
+    // POST /api/user/orders/claim replaces it: the customer presents the
+    // `cs_...` session id from their own success page, which is evidence of the
+    // purchase rather than a claim about it.
 
     const token = jwt.sign(
       { id: newUser.id, isAdmin: newUser.isAdmin },
@@ -81,7 +75,10 @@ const register = async (req, res) => {
       token,
     });
   } catch (error) {
-    console.error('Error thrown when creating new user: ', error);
+    logger.error(
+      { event: 'auth.register_failed', err: error },
+      'Error creating new user',
+    );
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -122,7 +119,7 @@ const login = async (req, res) => {
       token,
     });
   } catch (error) {
-    console.error('Error thrown when logging in user: ', error);
+    logger.error({ event: 'auth.login_failed', err: error }, 'Error logging in user');
     return res.status(500).json({ message: 'Internal server error' });
   }
 };

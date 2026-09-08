@@ -50,4 +50,36 @@ const updateStockById = async (db, id, stock) => {
   return rows[0] ?? null;
 };
 
-module.exports = { findManyByIdsWithProduct, findById, updateStockById };
+/**
+ * Take `quantity` off a variant's stock, atomically.
+ *
+ * Returns the new row, or `null` when there was not enough stock. The
+ * condition and the write are one statement, so the row lock Postgres takes for
+ * the UPDATE is what serialises concurrent callers — there is no window between
+ * deciding and writing.
+ *
+ * This replaces read-modify-write, which is a lost update: two orders both read
+ * `stock = 5`, both compute `4`, and the second write silently erases the
+ * first. `Math.max(stock - n, 0)` made that worse by clamping, so an oversell
+ * was recorded as a successful sale against a stock of 0.
+ *
+ * A `null` return is the caller's signal to abort — not to retry, since the
+ * shortage is a fact rather than a race that will resolve.
+ */
+const decrementStock = async (db, id, quantity) => {
+  const { rows } = await db.query(
+    `UPDATE "ProductVariant"
+     SET "stock" = "stock" - $2
+     WHERE "id" = $1 AND "stock" >= $2
+     RETURNING *`,
+    [id, quantity],
+  );
+  return rows[0] ?? null;
+};
+
+module.exports = {
+  findManyByIdsWithProduct,
+  findById,
+  updateStockById,
+  decrementStock,
+};

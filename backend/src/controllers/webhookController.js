@@ -1,12 +1,30 @@
 const stripe = require('../stripe');
-const { randomUUID } = require('crypto');
 const pool = require('../db/pool');
+const withTransaction = require('../db/withTransaction');
 const orderRepo = require('../repositories/orderRepo');
 const userRepo = require('../repositories/userRepo');
 const variantRepo = require('../repositories/variantRepo');
+const stripeEventRepo = require('../repositories/stripeEventRepo');
+const logger = require('../lib/logger');
 const env = require('../config/env');
 
 const WEBHOOK_SECRET = env.STRIPE_WEBHOOK_SECRET;
+
+/**
+ * A shortage found while committing an order.
+ *
+ * Distinguished from every other failure because it is *deterministic*: the
+ * stock is not coming back, so replaying the event produces the same result.
+ * Answering 500 would put Stripe into a retry loop against a fact.
+ */
+class OversellError extends Error {
+  constructor(variantId, quantity) {
+    super(`Insufficient stock for variant ${variantId} (wanted ${quantity})`);
+    this.name = 'OversellError';
+    this.variantId = variantId;
+    this.quantity = quantity;
+  }
+}
 
 const handleStripeWebhook = async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -16,142 +34,166 @@ const handleStripeWebhook = async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
+    logger.warn(
+      { event: 'webhook.signature_invalid', err: err.message },
+      'Webhook signature verification failed',
+    );
     return res.status(400).json({ message: `Webhook Error: ${err.message}` });
   }
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-
-    try {
-      await handleCheckoutCompleted(session);
-    } catch (err) {
-      console.error('Error processing checkout.session.completed:', err);
-      return res.status(500).json({ message: 'Webhook handler failed' });
-    }
+  // Anything we do not act on is still a delivery we accepted. Answering
+  // anything but 200 asks Stripe to redeliver an event we will ignore again.
+  if (event.type !== 'checkout.session.completed') {
+    logger.debug(
+      {
+        event: 'webhook.ignored',
+        stripeEventType: event.type,
+        stripeEventId: event.id,
+      },
+      'Unhandled event type acknowledged',
+    );
+    return res.status(200).json({ received: true });
   }
 
-  // Acknowledge receipt of the event
-  return res.status(200).json({ received: true });
+  try {
+    const outcome = await handleCheckoutCompleted(event);
+    return res.status(200).json({ received: true, outcome });
+  } catch (err) {
+    if (err instanceof OversellError) {
+      // Committed nothing. The customer has been charged and we cannot fulfil,
+      // which needs a human and a refund — but it does not need Stripe to keep
+      // knocking, so this is a 200 with a loud, matchable log line. Phase 7's
+      // alarm is a metric filter on this event name.
+      logger.error(
+        {
+          event: 'checkout.oversell',
+          stripeEventId: event.id,
+          stripeSessionId: event.data.object?.id,
+          variantId: err.variantId,
+          quantity: err.quantity,
+        },
+        'Order rolled back: insufficient stock. Manual refund required.',
+      );
+      return res.status(200).json({ received: true, outcome: 'oversell' });
+    }
+
+    // Everything else — a dropped connection, a Stripe API blip — is worth
+    // retrying, and 500 is how we ask for that.
+    logger.error(
+      { event: 'webhook.failed', stripeEventId: event.id, err },
+      'Error processing checkout.session.completed',
+    );
+    return res.status(500).json({ message: 'Webhook handler failed' });
+  }
 };
 
 /**
- * PHASE 3 REWRITES THIS FUNCTION. It is ported statement-for-statement onto the
- * repositories and left otherwise alone, so the correctness work lands as a
- * reviewable diff with tests behind it rather than hiding inside the data-layer
- * swap. The known defects, all still present:
+ * Record one completed checkout: the event, the order, its items and the stock
+ * it consumed, all or nothing.
  *
- *   - No transaction. A crash midway leaves a PAID order with partial items and
- *     partially-decremented stock, and because the order row exists the
- *     idempotency probe below makes every retry skip — cementing it.
- *   - The idempotency probe is a read-then-write that two concurrent deliveries
- *     both pass. Migration 0004 added the StripeEvent table it should use.
- *   - Stock decrement is read-modify-write: a lost update. `Math.max(..., 0)`
- *     hides an oversell instead of preventing it.
- *   - OrderItem insert failures are logged and swallowed, then answered 200.
- *
- * One defect is already gone, as a side effect of the driver change rather than
- * a decision: `shippingAddress` used to be JSON.stringify'd into a jsonb column
- * by the Supabase client, storing a JSON string scalar, so
- * `order.shippingAddress.city` read `undefined`. node-postgres serialises the
- * object itself, so the column now holds a real object.
+ * The Stripe API calls happen before the transaction opens. Holding a pooled
+ * connection open across network I/O is how a small pool turns into an outage
+ * under load, and neither call needs to be inside the atomic region.
  */
-async function handleCheckoutCompleted(session) {
-  // --- Idempotency check: skip if we already processed this session ---
-  const existingOrder = await orderRepo.findIdByStripeSessionId(pool, session.id);
+async function handleCheckoutCompleted(event) {
+  const session = event.data.object;
 
-  if (existingOrder) {
-    console.log(`Order for session ${session.id} already exists, skipping.`);
-    return;
-  }
-
-  // --- Retrieve line items with product metadata (contains variantId) ---
   const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
     expand: ['data.price.product'],
   });
 
-  // --- Look up user by email (nullable for guest checkouts) ---
-  let userId = null;
-  const customerEmail = session.customer_details?.email;
+  const customerEmail = session.customer_details?.email ?? null;
 
-  if (customerEmail) {
-    const user = await userRepo.findByEmail(pool, customerEmail);
+  return withTransaction(pool, async (tx) => {
+    // Claim the event first, inside the transaction. If this returns null the
+    // event is already recorded and we stop without touching anything else;
+    // if the transaction later rolls back, the claim rolls back with it and
+    // the event stays retryable.
+    const claimed = await stripeEventRepo.recordOnce(tx, {
+      id: event.id,
+      type: event.type,
+    });
 
-    if (user) {
-      userId = user.id;
-    }
-  }
-
-  // --- Create the Order row ---
-  const orderId = randomUUID();
-
-  await orderRepo.insert(pool, {
-    id: orderId,
-    stripeSessionId: session.id,
-    userId,
-    customerEmail: customerEmail || null,
-    totalAmount: (session.amount_total || 0) / 100,
-    status: 'PAID',
-    shippingAddress: session.shipping_details?.address ?? null,
-  });
-
-  console.log(`Created Order ${orderId} for session ${session.id}`);
-
-  // --- Create OrderItem rows and decrement stock ---
-  for (const item of lineItems.data) {
-    const variantId = item.price?.product?.metadata?.variantId;
-    const quantity = item.quantity || 1;
-    const priceAtSale = (item.amount_total || 0) / 100 / quantity;
-
-    // Skip items without a variantId (e.g. synthetic events from `stripe trigger`)
-    if (!variantId) {
-      console.warn(
-        'Skipping line item with no variantId metadata (likely a test event)',
+    if (!claimed) {
+      logger.info(
+        { event: 'webhook.duplicate', stripeEventId: event.id },
+        'Event already processed, skipping',
       );
-      continue;
+      return 'duplicate';
     }
 
-    // Create the OrderItem
-    try {
-      await orderRepo.insertItem(pool, {
-        id: randomUUID(),
-        orderId,
+    // A guest checkout has no account to attach to, and an email that matches
+    // an account is not proof the buyer owns it — so this only links when the
+    // address is already registered, and the success page's explicit claim is
+    // what covers everyone else.
+    let userId = null;
+    if (customerEmail) {
+      const user = await userRepo.findByEmail(tx, customerEmail);
+      userId = user?.id ?? null;
+    }
+
+    const order = await orderRepo.insert(tx, {
+      stripeSessionId: session.id,
+      userId,
+      customerEmail,
+      totalAmount: (session.amount_total || 0) / 100,
+      status: 'PAID',
+      shippingAddress: session.shipping_details?.address ?? null,
+    });
+
+    for (const item of lineItems.data) {
+      const variantId = item.price?.product?.metadata?.variantId;
+      const quantity = item.quantity || 1;
+      const priceAtSale = (item.amount_total || 0) / 100 / quantity;
+
+      // Synthetic events from `stripe trigger` carry no variantId. Skipping
+      // them keeps local testing usable; a real session always has one.
+      if (!variantId) {
+        logger.warn(
+          { event: 'webhook.line_item_skipped', stripeEventId: event.id },
+          'Line item has no variantId metadata (likely a test event)',
+        );
+        continue;
+      }
+
+      // No try/catch: a failure here has to take the whole order down with it.
+      // Logging and continuing used to leave a PAID order missing items, and
+      // then answer 200 so nothing ever revisited it.
+      await orderRepo.insertItem(tx, {
+        orderId: order.id,
         variantId,
         quantity,
         priceAtSale,
       });
-    } catch (itemError) {
-      console.error(
-        `Failed to create OrderItem for variant ${variantId}:`,
-        itemError.message,
-      );
-    }
 
-    // Decrement stock for the variant
-    try {
-      const variant = await variantRepo.findById(pool, variantId);
+      const variant = await variantRepo.decrementStock(tx, variantId, quantity);
 
       if (!variant) {
-        console.error(`Failed to fetch stock for variant ${variantId}: not found`);
-        continue;
+        throw new OversellError(variantId, quantity);
       }
 
-      const newStock = Math.max((variant.stock || 0) - quantity, 0);
-
-      await variantRepo.updateStockById(pool, variantId, newStock);
-
-      console.log(
-        `Decremented stock for variant ${variantId}: ${variant.stock} → ${newStock}`,
-      );
-    } catch (stockError) {
-      console.error(
-        `Failed to update stock for variant ${variantId}:`,
-        stockError.message,
+      logger.debug(
+        { event: 'stock.decremented', variantId, quantity, remaining: variant.stock },
+        'Stock decremented',
       );
     }
-  }
+
+    logger.info(
+      {
+        event: 'order.created',
+        orderId: order.id,
+        stripeSessionId: session.id,
+        stripeEventId: event.id,
+        totalAmount: order.totalAmount,
+      },
+      'Order committed',
+    );
+
+    return 'created';
+  });
 }
 
 module.exports = {
   handleStripeWebhook,
+  OversellError,
 };

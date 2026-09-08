@@ -8,6 +8,7 @@
 
 const pg = require('pg');
 const env = require('../config/env');
+const logger = require('../lib/logger');
 
 /**
  * Return `numeric` as a JS number instead of a string.
@@ -37,7 +38,10 @@ const pool = new pg.Pool({
 // An error on an idle client is emitted on the pool, not on any query. Without
 // a listener this takes the process down.
 pool.on('error', (error) => {
-  console.error('Unexpected error on idle database client:', error);
+  logger.error(
+    { event: 'db.idle_client_error', err: error },
+    'Unexpected error on idle database client',
+  );
 });
 
 module.exports = pool;
