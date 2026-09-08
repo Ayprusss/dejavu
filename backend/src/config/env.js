@@ -10,11 +10,7 @@
  * file to find — the variables come from the environment itself.
  */
 
-// SUPABASE_* are still required because src/supabase.js is still imported by
-// the controllers. Phase 2b deletes that module and these two entries with it.
 const REQUIRED = [
-  'SUPABASE_URL',
-  'SUPABASE_KEY',
   'DATABASE_URL',
   'JWT_SECRET',
   'STRIPE_SECRET_KEY',
@@ -69,9 +65,6 @@ const parseList = (value, fallback) => {
 module.exports = Object.freeze({
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: port,
-
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_KEY: process.env.SUPABASE_KEY,
 
   DATABASE_URL: process.env.DATABASE_URL,
   PG_POOL_MAX: poolMax,

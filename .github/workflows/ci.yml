@@ -138,7 +138,7 @@ jobs:
       - name: App refuses to boot without JWT_SECRET
         run: |
           set +e
-          output=$(SUPABASE_URL=x SUPABASE_KEY=x \
+          output=$(DATABASE_URL=postgres://x/x \
                    STRIPE_SECRET_KEY=x STRIPE_WEBHOOK_SECRET=x \
                    node -e "require('./src/app')" 2>&1)
           status=$?
@@ -156,7 +156,7 @@ jobs:
 
       - name: App boots when every required variable is present
         run: |
-          SUPABASE_URL=http://localhost:54321 SUPABASE_KEY=x \
+          DATABASE_URL=postgres://dejavu:dejavu@localhost:5432/dejavu \
           JWT_SECRET=a-test-secret-that-is-at-least-32-chars \
           STRIPE_SECRET_KEY=sk_test_x STRIPE_WEBHOOK_SECRET=whsec_x \
           node -e "require('./src/app'); console.log('OK: booted')"

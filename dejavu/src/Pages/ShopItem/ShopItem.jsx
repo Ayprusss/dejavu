@@ -25,7 +25,7 @@ function ShopItem({ onAddToCart }) {
 
         const data = await response.json();
 
-        // Transform the Supabase/Express payload to match what this legacy UI expects:
+        // Transform the API payload to match what this legacy UI expects:
         // Description and sizeGuide are stored as JSON strings in the DB
         let parsedDescription = null;
         try {

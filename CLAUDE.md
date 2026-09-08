@@ -119,13 +119,13 @@ On registration, `authController` links any prior guest `Order` rows that match 
 
 **Backend** (`backend/.env`):
 ```
-SUPABASE_URL=
-SUPABASE_KEY=           # service role key
+DATABASE_URL=           # postgres://user:pass@host:5432/db
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 JWT_SECRET=
 FRONTEND_URL=           # used for Stripe redirect URLs (default: https://dejavustudio.xyz)
 PORT=                   # optional, default 5000
+PG_POOL_MAX=            # optional, default 10
 ```
 
 **Frontend** (`dejavu/.env`):

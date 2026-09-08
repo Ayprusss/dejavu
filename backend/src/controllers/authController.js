@@ -1,7 +1,16 @@
-const supabase = require('../supabase');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const pool = require('../db/pool');
+const userRepo = require('../repositories/userRepo');
+const orderRepo = require('../repositories/orderRepo');
 const env = require('../config/env');
+
+/**
+ * Addresses are stored lowercased and looked up on `lower(email)`, matching the
+ * unique index from migration 0007. Before that, `A@x.com` and `a@x.com` were
+ * two accounts and which one you logged into depended on your capitalisation.
+ */
+const normalizeEmail = (email) => email.trim().toLowerCase();
 
 const register = async (req, res) => {
   const { email, password, firstName, lastName } = req.body;
@@ -10,16 +19,10 @@ const register = async (req, res) => {
     return res.status(400).json({ message: 'All fields are required' });
   }
 
-  try {
-    const { data: existingUser, error: existingError } = await supabase
-      .from('User')
-      .select('*')
-      .eq('email', email)
-      .single();
+  const normalizedEmail = normalizeEmail(email);
 
-    if (existingError && existingError.code !== 'PGRST116') {
-      throw existingError;
-    }
+  try {
+    const existingUser = await userRepo.findByEmail(pool, normalizedEmail);
 
     if (existingUser) {
       return res.status(409).json({ message: 'User already exists' });
@@ -32,57 +35,48 @@ const register = async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const { data: newUser, error: newUserError } = await supabase
-      .from('User')
-      .insert({
-        email,
-        passwordHash: hashedPassword,
-        firstName,
-        lastName,
-        isAdmin: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .select();
+    const newUser = await userRepo.insert(pool, {
+      email: normalizedEmail,
+      passwordHash: hashedPassword,
+      firstName,
+      lastName,
+      isAdmin: false,
+    });
 
-    if (newUserError) {
-      throw newUserError;
-    }
-
-    // Link any past guest orders to this newly created account
+    // Link any past guest orders to this newly created account.
+    //
+    // This is unverified — anyone who knows a buyer's email can register with
+    // it and inherit that person's order history and shipping addresses.
+    // Phase 3 replaces it with an explicit claim against a stripeSessionId,
+    // which only the real buyer has. Ported as-is so that change lands as a
+    // deliberate diff with a test, rather than buried in the data-layer swap.
     try {
-      const { error: linkOrdersError } = await supabase
-        .from('Order')
-        .update({ userId: newUser[0].id, updatedAt: new Date().toISOString() })
-        .eq('customerEmail', email)
-        .is('userId', null);
+      const linked = await orderRepo.linkGuestOrdersToUser(pool, {
+        email: normalizedEmail,
+        userId: newUser.id,
+      });
 
-      if (linkOrdersError) {
-        console.error(
-          'Failed to link existing guest orders to new user:',
-          linkOrdersError,
-        );
-      } else {
-        console.log(`Successfully checked and linked past orders for ${email}`);
-      }
+      console.log(`Linked ${linked} past guest order(s) for ${normalizedEmail}`);
     } catch (linkError) {
-      console.error('Exception while linking orders: ', linkError);
+      console.error('Failed to link existing guest orders to new user:', linkError);
     }
 
     const token = jwt.sign(
-      { id: newUser[0].id, isAdmin: newUser[0].isAdmin },
+      { id: newUser.id, isAdmin: newUser.isAdmin },
       env.JWT_SECRET,
-      { expiresIn: '24h' },
+      {
+        expiresIn: '24h',
+      },
     );
 
     res.status(201).json({
       message: 'User Registered Successfully',
       user: {
-        id: newUser[0].id,
-        email: newUser[0].email,
-        firstName: newUser[0].firstName,
-        lastName: newUser[0].lastName,
-        isAdmin: newUser[0].isAdmin,
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        isAdmin: newUser.isAdmin,
       },
       token,
     });
@@ -100,16 +94,10 @@ const login = async (req, res) => {
   }
 
   try {
-    const { data: user, error } = await supabase
-      .from('User')
-      .select('*')
-      .eq('email', email)
-      .single();
+    const user = await userRepo.findByEmail(pool, normalizeEmail(email));
 
-    if (error && error.code === 'PGRST116') {
+    if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
-    } else if (error) {
-      throw error;
     }
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);

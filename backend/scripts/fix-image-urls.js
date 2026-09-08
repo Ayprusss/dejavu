@@ -3,25 +3,18 @@
  * Replaces `http://localhost:5173` with `https://dejavustudio.xyz`.
  *
  * Run from the backend root:
- *   node scripts/fix-image-urls.js
+ *   node --require dotenv/config scripts/fix-image-urls.js
  */
 
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
-const { createClient } = require('@supabase/supabase-js');
-
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const pool = require('../src/db/pool');
 
 const OLD_BASE = 'http://localhost:5173';
 const NEW_BASE = 'https://dejavustudio.xyz';
 
 async function fixImageUrls() {
-  const { data: products, error } = await supabase.from('Product').select('id, images');
-
-  if (error) {
-    console.error('Failed to fetch products:', error);
-    process.exit(1);
-  }
+  const { rows: products } = await pool.query(
+    `SELECT "id", "images" FROM "Product" ORDER BY "createdAt"`,
+  );
 
   console.log(`Found ${products.length} products. Checking for localhost URLs...`);
 
@@ -39,21 +32,26 @@ async function fixImageUrls() {
       url.startsWith(OLD_BASE) ? url.replace(OLD_BASE, NEW_BASE) : url,
     );
 
-    const { error: updateError } = await supabase
-      .from('Product')
-      .update({ images: fixedImages })
-      .eq('id', product.id);
+    try {
+      await pool.query(`UPDATE "Product" SET "images" = $2 WHERE "id" = $1`, [
+        product.id,
+        fixedImages,
+      ]);
 
-    if (updateError) {
-      console.error(`  [ERROR] Failed to update ${product.id}:`, updateError);
-    } else {
       console.log(`  [FIXED] ${product.id}`);
       console.log(`    Before: ${images[0]}`);
       console.log(`    After:  ${fixedImages[0]}`);
+    } catch (error) {
+      console.error(`  [ERROR] Failed to update ${product.id}:`, error.message);
     }
   }
 
   console.log('\nDone!');
 }
 
-fixImageUrls();
+fixImageUrls()
+  .catch((error) => {
+    console.error('Failed to fetch products:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => pool.end());

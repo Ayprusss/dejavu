@@ -14,7 +14,7 @@ COPY src ./src
 
 EXPOSE 5000
 
-# Runtime env vars (SUPABASE_URL, STRIPE_SECRET_KEY, etc.) are injected by
+# Runtime env vars (DATABASE_URL, STRIPE_SECRET_KEY, etc.) are injected by
 # docker-compose / `docker run -e`, not read from a .env file baked into
 # the image — so we call node directly instead of the dotenv-wrapped
 # npm scripts from package.json.

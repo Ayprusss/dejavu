@@ -1,4 +1,6 @@
-const supabase = require('../supabase');
+const pool = require('../db/pool');
+const variantRepo = require('../repositories/variantRepo');
+const orderRepo = require('../repositories/orderRepo');
 const stripe = require('../stripe');
 const env = require('../config/env');
 const { parseCartItems } = require('../lib/cart');
@@ -18,28 +20,9 @@ const createCheckout = async (req, res) => {
 
     const variantIds = [...new Set(parsedItems.map((item) => item.variantId))];
 
-    const { data: variants, error: variantError } = await supabase
-      .from('ProductVariant')
-      .select(
-        `
-                id,
-                size,
-                stock,
-                Product (
-                    name,
-                    price
-                )
-            `,
-      )
-      .in('id', variantIds);
+    const variants = await variantRepo.findManyByIdsWithProduct(pool, variantIds);
 
-    if (variantError) {
-      throw variantError;
-    }
-
-    const variantMap = new Map(
-      (variants || []).map((variant) => [variant.id, variant]),
-    );
+    const variantMap = new Map(variants.map((variant) => [variant.id, variant]));
     const lineItems = [];
 
     for (const item of parsedItems) {
@@ -109,32 +92,7 @@ const getCheckoutSession = async (req, res) => {
   }
 
   try {
-    const { data: order, error } = await supabase
-      .from('Order')
-      .select(
-        `
-                id,
-                stripeSessionId,
-                customerEmail,
-                totalAmount,
-                status,
-                shippingAddress,
-                createdAt,
-                OrderItem (
-                    id,
-                    quantity,
-                    priceAtSale,
-                    ProductVariant (
-                        size,
-                        Product ( name, images )
-                    )
-                )
-            `,
-      )
-      .eq('stripeSessionId', sessionId)
-      .maybeSingle();
-
-    if (error) throw error;
+    const order = await orderRepo.findByStripeSessionIdWithItems(pool, sessionId);
 
     if (!order) {
       // Webhook may not have processed the session yet

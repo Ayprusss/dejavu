@@ -1,4 +1,7 @@
-const supabase = require('../supabase');
+const pool = require('../db/pool');
+const productRepo = require('../repositories/productRepo');
+const variantRepo = require('../repositories/variantRepo');
+const orderRepo = require('../repositories/orderRepo');
 
 const createProduct = async (req, res) => {
   const { stripeProductId, name, description, price, images, sizeGuide } = req.body;
@@ -8,23 +11,16 @@ const createProduct = async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('Product')
-      .insert({
-        stripeProductId,
-        name,
-        description,
-        price,
-        images,
-        sizeGuide,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      })
-      .select();
+    const product = await productRepo.insert(pool, {
+      stripeProductId,
+      name,
+      description,
+      price,
+      images,
+      sizeGuide,
+    });
 
-    if (error) throw error;
-
-    res.status(201).json({ message: 'Product created successfully', product: data[0] });
+    res.status(201).json({ message: 'Product created successfully', product });
   } catch (error) {
     console.error('Error creating product:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -33,24 +29,24 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
   const { id } = req.params;
-  const updates = req.body;
 
-  // Ensure we don't accidentally update id
-  delete updates.id;
-  updates.updatedAt = new Date().toISOString();
+  // The repository narrows the body to its own column allowlist, so `id` and
+  // anything else unrecognised is dropped rather than deleted by hand here.
+  // `updatedAt` is the trigger's job as of migration 0006.
+  const updates = productRepo.pickUpdatable(req.body);
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({
+      message: `No updatable fields provided. Allowed: ${productRepo.UPDATABLE_COLUMNS.join(', ')}`,
+    });
+  }
 
   try {
-    const { data, error } = await supabase
-      .from('Product')
-      .update(updates)
-      .eq('id', id)
-      .select();
+    const product = await productRepo.updateById(pool, id, updates);
 
-    if (error) throw error;
-    if (data.length === 0)
-      return res.status(404).json({ message: 'Product not found' });
+    if (!product) return res.status(404).json({ message: 'Product not found' });
 
-    res.status(200).json({ message: 'Product updated successfully', product: data[0] });
+    res.status(200).json({ message: 'Product updated successfully', product });
   } catch (error) {
     console.error('Error updating product:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -65,20 +61,19 @@ const updateInventory = async (req, res) => {
     return res.status(400).json({ message: 'Stock value is required' });
   }
 
+  // Migration 0003 added CHECK (stock >= 0). Without this guard a negative
+  // value reaches the database and comes back as a constraint violation, which
+  // would surface to the admin as a 500 for what is plainly a bad request.
+  if (!Number.isInteger(stock) || stock < 0) {
+    return res.status(400).json({ message: 'Stock must be a non-negative integer' });
+  }
+
   try {
-    const { data, error } = await supabase
-      .from('ProductVariant')
-      .update({ stock, updatedAt: new Date().toISOString() })
-      .eq('id', variantId)
-      .select();
+    const variant = await variantRepo.updateStockById(pool, variantId, stock);
 
-    if (error) throw error;
-    if (data.length === 0)
-      return res.status(404).json({ message: 'Variant not found' });
+    if (!variant) return res.status(404).json({ message: 'Variant not found' });
 
-    res
-      .status(200)
-      .json({ message: 'Inventory updated successfully', variant: data[0] });
+    res.status(200).json({ message: 'Inventory updated successfully', variant });
   } catch (error) {
     console.error('Error updating inventory:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -87,27 +82,9 @@ const updateInventory = async (req, res) => {
 
 const getOrders = async (req, res) => {
   try {
-    // Fetch orders, customer info, and order items
-    const { data, error } = await supabase
-      .from('Order')
-      .select(
-        `
-                *,
-                User ( email, firstName, lastName ),
-                OrderItem (
-                    *,
-                    ProductVariant (
-                        size,
-                        Product ( name )
-                    )
-                )
-            `,
-      )
-      .order('createdAt', { ascending: false });
+    const orders = await orderRepo.findAllWithUserAndItems(pool);
 
-    if (error) throw error;
-
-    res.status(200).json(data);
+    res.status(200).json(orders);
   } catch (error) {
     console.error('Error fetching orders:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -126,16 +103,11 @@ const updateOrderStatus = async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase
-      .from('Order')
-      .update({ status, updatedAt: new Date().toISOString() })
-      .eq('id', orderId)
-      .select();
+    const order = await orderRepo.updateStatusById(pool, orderId, status);
 
-    if (error) throw error;
-    if (data.length === 0) return res.status(404).json({ message: 'Order not found' });
+    if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    res.status(200).json({ message: 'Order status updated', order: data[0] });
+    res.status(200).json({ message: 'Order status updated', order });
   } catch (error) {
     console.error('Error updating order status:', error);
     res.status(500).json({ message: 'Internal server error' });
