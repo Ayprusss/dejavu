@@ -1,6 +1,7 @@
 const pool = require('../db/pool');
 const productRepo = require('../repositories/productRepo');
 const { validate: isUuid } = require('uuid');
+const logger = require('../lib/logger');
 
 const getProducts = async (req, res) => {
   try {
@@ -8,7 +9,10 @@ const getProducts = async (req, res) => {
 
     res.status(200).json(products);
   } catch (error) {
-    console.error('Error fetching products: ', error);
+    logger.error(
+      { event: 'product.list_failed', err: error },
+      'Error fetching products',
+    );
 
     res.status(500).json({ message: 'Internal server error' });
   }
@@ -32,7 +36,10 @@ const getProductById = async (req, res) => {
 
     res.status(200).json(product);
   } catch (error) {
-    console.error('Error fetching product: ', error);
+    logger.error(
+      { event: 'product.fetch_failed', productId: id, err: error },
+      'Error fetching product',
+    );
 
     res.status(500).json({ message: 'Server error fetching product details' });
   }

@@ -151,6 +151,7 @@ const findByStripeSessionIdWithItems = async (db, stripeSessionId) => {
   const { rows } = await db.query(
     `SELECT
         o."id",
+        o."userId",
         o."stripeSessionId",
         o."customerEmail",
         o."totalAmount",
@@ -230,18 +231,30 @@ const updateStatusById = async (db, id, status) => {
 };
 
 /**
- * Claim a new account's guest orders. Matched case-insensitively, in step with
- * the unique index from migration 0007 — the previous exact match missed any
- * order placed under a different capitalisation of the same address.
+ * Attach one guest order to an account, proving ownership with the session id.
+ *
+ * This replaces claiming every order that merely shared an email address, which
+ * handed anyone who knew a buyer's address that buyer's order history and
+ * shipping addresses for the price of registering. A `cs_...` id is high-entropy
+ * and is only ever shown to the person who completed the payment, on their own
+ * success page — so possessing it is the evidence that bulk email matching
+ * never had.
+ *
+ * `"userId" IS NULL` makes it single-use: an order already belonging to someone
+ * cannot be taken from them by replaying the id. Returns `null` when nothing
+ * was claimable, and the caller deliberately does not distinguish "no such
+ * order" from "already claimed" — telling those apart would leak which session
+ * ids are real.
  */
-const linkGuestOrdersToUser = async (db, { email, userId }) => {
-  const { rowCount } = await db.query(
+const claimBySessionId = async (db, { stripeSessionId, userId }) => {
+  const { rows } = await db.query(
     `UPDATE "Order"
      SET "userId" = $2
-     WHERE lower("customerEmail") = lower($1) AND "userId" IS NULL`,
-    [email, userId],
+     WHERE "stripeSessionId" = $1 AND "userId" IS NULL
+     RETURNING *`,
+    [stripeSessionId, userId],
   );
-  return rowCount;
+  return rows[0] ?? null;
 };
 
 module.exports = {
@@ -252,5 +265,5 @@ module.exports = {
   insert,
   insertItem,
   updateStatusById,
-  linkGuestOrdersToUser,
+  claimBySessionId,
 };

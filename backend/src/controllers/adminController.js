@@ -2,6 +2,7 @@ const pool = require('../db/pool');
 const productRepo = require('../repositories/productRepo');
 const variantRepo = require('../repositories/variantRepo');
 const orderRepo = require('../repositories/orderRepo');
+const logger = require('../lib/logger');
 
 const createProduct = async (req, res) => {
   const { stripeProductId, name, description, price, images, sizeGuide } = req.body;
@@ -22,7 +23,10 @@ const createProduct = async (req, res) => {
 
     res.status(201).json({ message: 'Product created successfully', product });
   } catch (error) {
-    console.error('Error creating product:', error);
+    logger.error(
+      { event: 'admin.product_create_failed', err: error },
+      'Error creating product',
+    );
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -48,7 +52,10 @@ const updateProduct = async (req, res) => {
 
     res.status(200).json({ message: 'Product updated successfully', product });
   } catch (error) {
-    console.error('Error updating product:', error);
+    logger.error(
+      { event: 'admin.product_update_failed', productId: id, err: error },
+      'Error updating product',
+    );
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -75,7 +82,10 @@ const updateInventory = async (req, res) => {
 
     res.status(200).json({ message: 'Inventory updated successfully', variant });
   } catch (error) {
-    console.error('Error updating inventory:', error);
+    logger.error(
+      { event: 'admin.inventory_update_failed', variantId, err: error },
+      'Error updating inventory',
+    );
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -86,7 +96,10 @@ const getOrders = async (req, res) => {
 
     res.status(200).json(orders);
   } catch (error) {
-    console.error('Error fetching orders:', error);
+    logger.error(
+      { event: 'admin.orders_fetch_failed', err: error },
+      'Error fetching orders',
+    );
     res.status(500).json({ message: 'Internal server error' });
   }
 };
@@ -109,7 +122,10 @@ const updateOrderStatus = async (req, res) => {
 
     res.status(200).json({ message: 'Order status updated', order });
   } catch (error) {
-    console.error('Error updating order status:', error);
+    logger.error(
+      { event: 'admin.order_status_failed', orderId, err: error },
+      'Error updating order status',
+    );
     res.status(500).json({ message: 'Internal server error' });
   }
 };

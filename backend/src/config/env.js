@@ -49,6 +49,13 @@ if (!Number.isInteger(poolMax) || poolMax < 1) {
   );
 }
 
+const trustProxy = Number(process.env.TRUST_PROXY ?? 0);
+if (!Number.isInteger(trustProxy) || trustProxy < 0) {
+  problems.push(
+    `TRUST_PROXY must be a non-negative integer (got "${process.env.TRUST_PROXY}")`,
+  );
+}
+
 if (problems.length > 0) {
   throw new Error(`Invalid environment configuration:\n  - ${problems.join('\n  - ')}`);
 }
@@ -68,6 +75,15 @@ module.exports = Object.freeze({
 
   DATABASE_URL: process.env.DATABASE_URL,
   PG_POOL_MAX: poolMax,
+
+  LOG_LEVEL:
+    process.env.LOG_LEVEL || (process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+
+  // Number of proxies in front of the app. Express uses this to decide which
+  // entry in X-Forwarded-For is the real client — which is what the rate
+  // limiter keys on, so a wrong value here lets one client be counted as many.
+  // 0 (the default) means no proxy and the socket address is used directly.
+  TRUST_PROXY: trustProxy,
 
   JWT_SECRET: process.env.JWT_SECRET,
 
