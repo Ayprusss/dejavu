@@ -1,0 +1,46 @@
+# gitleaks configuration.
+#
+# The default ruleset is kept in full — this file only adds narrow exceptions
+# for values that are provably not secrets. Nothing here disables a rule.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+The hardcoded JWT secret used by the test harnesses.
+
+Flagged by the `generic-api-key` rule, which fires on any sufficiently long,
+sufficiently random-looking value assigned to a name containing "SECRET". That
+is the correct behaviour for the rule and a false positive here: the value is a
+literal in backend/tests/setup.js and backend/tests/integration/setup.js, and it
+exists precisely so the suites never need a real credential.
+
+It cannot simply be shortened. src/config/env.js enforces a 32-character
+minimum on JWT_SECRET (Phase 0), and the tests assert that the app boots — so
+any value that satisfies the app is long enough to keep tripping the rule.
+
+Scoped to this exact string rather than to the test directories. Allowlisting
+`backend/tests/**` wholesale is how a real credential pasted into a fixture
+later goes unnoticed; matching the literal means every other secret in those
+same files is still caught.
+"""
+regexes = [
+  '''test-jwt-secret-at-least-32-characters-long''',
+]
+
+[[allowlists]]
+description = """
+Local and CI database connection strings.
+
+`postgres://dejavu:dejavu@localhost:5432/...` is the throwaway credential pair
+baked into docker-compose.yml and the CI service container. It grants access to
+a container that is created and destroyed by the test run, and it appears in
+compose, CI, .env.example and the integration harness by design.
+
+The production credential never appears in the repository: Phase 6 reads it from
+Secrets Manager, and DATABASE_URL is supplied by the environment.
+"""
+regexes = [
+  '''postgres://dejavu:dejavu@(localhost|db|127\.0\.0\.1):5432/\w+''',
+]

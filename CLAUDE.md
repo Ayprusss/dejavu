@@ -27,6 +27,25 @@ npm start        # node with dotenv (production)
 
 The backend defaults to port `5000`. The frontend reads `VITE_API_URL` from its `.env`; it falls back to `http://localhost:5000`.
 
+### Tests (`backend/`)
+```bash
+npm test                 # unit only — pure logic, no database needed
+npm run test:integration # real Postgres; needs `docker compose up -d db`
+npm run test:all         # both
+```
+
+Unit tests cover pure logic (`lib/money`, `lib/cart`, `authMiddleware`).
+Everything touching the database is covered by integration tests against real
+Postgres — the data layer is deliberately **not** mocked. Integration tests
+TRUNCATE every table between cases, so `globalSetup` refuses to run against any
+host that is not local. Set `DATABASE_URL` to a throwaway database.
+
+When adding a concurrency test, make the interleaving happen rather than hoping
+for it: `Promise.all` alone is not enough, because each transaction finishes
+before the next begins. Use `stubLineItemsWithBarrier`, or drive two explicit
+connections as `tests/integration/concurrency.test.js` does. Verify a new
+correctness test by breaking the code it covers and watching it fail.
+
 ### Database (`backend/`)
 ```bash
 docker compose up -d db     # local Postgres 16 on :5432
