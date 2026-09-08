@@ -239,12 +239,66 @@ jobs:
           })();
           "
 
+  test-integration:
+    name: test-integration (real Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dejavu
+          POSTGRES_PASSWORD: dejavu
+          POSTGRES_DB: dejavu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dejavu -d dejavu_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The suite TRUNCATEs every table between tests, so it gets its own
+      # database. globalSetup refuses to run against a non-local host.
+      DATABASE_URL: postgres://dejavu:dejavu@localhost:5432/dejavu_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # No Stripe or Supabase credentials: tests/integration/setup.js supplies
+      # fakes, webhook payloads are signed locally with a test secret, and the
+      # only Stripe network call is stubbed. Migrations are applied by the
+      # suite's own globalSetup, from the same files the `migrations` job runs.
+      - name: Run integration tests
+        run: npm run test:integration
+
   # Aggregate gate: this is the single check to require in branch protection,
   # so adding a job above does not mean editing the protection rule.
   ci:
     name: ci
     runs-on: ubuntu-latest
-    needs: [lint, test-backend, test-frontend, build-frontend, boot-check, migrations]
+    needs:
+      [
+        lint,
+        test-backend,
+        test-frontend,
+        build-frontend,
+        boot-check,
+        migrations,
+        test-integration,
+      ]
     if: always()
     steps:
       - name: Fail if any required job did not succeed
@@ -255,4 +309,5 @@ jobs:
           echo "build-frontend: ${{ needs.build-frontend.result }}"
           echo "boot-check:     ${{ needs.boot-check.result }}"
           echo "migrations:     ${{ needs.migrations.result }}"
+          echo "integration:    ${{ needs.test-integration.result }}"
           [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

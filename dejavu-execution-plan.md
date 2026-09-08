@@ -20,7 +20,7 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 | **C1** | 2a — Migrations + `pg` layer scaffolding **[x]** | `docker compose up` runs local Postgres; migrations up/down clean |
 | **C2** | 2b — Rewrite the 20 controller call sites **[x]** | Zero `supabase` imports; storefront works end to end locally |
 | **D** | 3 — Correctness fixes **[x]** | Webhook is transactional; stock decrements atomically |
-| **E** | 4 — Integration + E2E in CI | Idempotency and no-oversell proven by tests |
+| **E** | 4 — Integration in CI **[x]** · E2E deferred | Idempotency and no-oversell proven by tests |
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
 | **F** | 5 — Terraform + OIDC + secrets | `plan` on PR with no AWS keys in the repo |
 | **G** | 6 — RDS + Lambda deploy | Real Stripe webhook verifies against the Function URL |
@@ -58,7 +58,7 @@ Phase 0  Remediation & hygiene        BLOCKER      hours        [done]
 Phase 1  Test harness + CI gate       roadmap #1   ~1 week      [done]
 Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   [done] <- largest single phase
 Phase 3  Correctness fixes            roadmap #5a  ~1 week      [done]
-Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      <- next
+Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      [integration done; E2E deferred]
 -- CI/CD complete; everything above costs $0 --
 Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week
 Phase 6  RDS + Lambda deploy          roadmap #2b/#4
@@ -266,13 +266,15 @@ Related: `GET /api/checkout/session/:sessionId` has **no authorization at all** 
 
 ---
 
-# Phase 4 — Integration + E2E Against Real Dependencies
+# Phase 4 — Integration + E2E Against Real Dependencies [~]
 
 *Roadmap #5.* Where the depth actually lives.
 
-### Integration suite
+### Integration suite [x]
 
 Postgres as a GitHub Actions **service container**; run migrations, then supertest against a real database. Test isolation by `TRUNCATE ... RESTART IDENTITY CASCADE` in `beforeEach` with a single fork — simpler than per-worker schemas and fast enough at this size; revisit if the suite grows.
+
+Delivered as a second Vitest project (`vitest.integration.config.mjs`, `npm run test:integration`) so `npm test` stays database-free and fast. 49 tests across four files, plus a `test-integration` CI job on its own `dejavu_test` database. `globalSetup` applies the same migrations the app ships and refuses to run against any host that is not local — the suite truncates every table, so pointing `DATABASE_URL` at something real should fail loudly rather than quietly.
 
 ### Webhook fixtures
 
@@ -285,15 +287,27 @@ Sign fixture payloads with `stripe.webhooks.generateTestHeaderString` against a 
 - **Out-of-order:** `payment_intent.succeeded` arriving before `checkout.session.completed` → handled, no duplicate.
 - **Partial failure:** kill the transaction mid-flight → nothing committed, retry succeeds.
 
-### E2E
+### E2E [deferred]
+
+**Not built.** Playwright is a browser dependency, a compose stack in CI, and the slowest and flakiest job in the repo, and the integration suite already carries the claims worth defending. Deferred as an explicit decision rather than an omission; the exit criterion below is met without it.
 
 Playwright over the compose stack: browse → cart → checkout → webhook → order visible in admin. Traces and screenshots uploaded as artifacts on failure.
 
 **Keep the Stripe-hosted-checkout leg in a separate non-blocking job.** Driving Stripe's hosted page with test card `4242...` is inherently flaky and a flaky required check trains you to ignore CI. The blocking E2E job stubs the redirect; the full-path job runs alongside and reports.
 
-**Exit criteria:** idempotency and no-oversell are proven by tests, not by argument.
+### What Phase 4 actually turned up
 
-*Phase 3 verified these by probe against real Postgres — replay x3 and concurrent replay both yield exactly one order and one decrement; oversell rolls back everything including the event claim; a multi-line order whose second line oversells rolls back the first line's decrement. Phase 4's job is to turn those probes into the committed suite with the harness (service container, TRUNCATE isolation) behind them.*
+**A concurrency test that is not concurrent proves nothing, and looks identical to one that is.** The obvious shape — fire two deliveries with `Promise.all`, assert one order — passes against an implementation with *no concurrency control at all*, because each transaction finishes before the next one opens. This was not a guess: replacing the `ON CONFLICT` claim with the read-then-write it replaced left all fifteen webhook tests green.
+
+Two things fixed it. A barrier in the Stripe stub holds every delivery until all of them have arrived, so the transactions are genuinely open at once. And the guarantees are pinned properly in `concurrency.test.js`, which drives two explicit connections and commits the first only once the second is provably blocked on its lock. **Both are verified by mutation:** reverting the event claim to read-then-write fails exactly the two idempotency tests, and reverting the atomic decrement to read-modify-write fails exactly the seven stock tests. A suite that has never been run against broken code is a guess.
+
+**`pool.js` is a module singleton and `singleFork` shares it across files.** `pool.end()` in one file's `afterAll` handed the next file a closed pool — a connection error in whichever file happened to run second, pointing at innocent code. Vitest tears the worker down itself, so nothing ends the pool.
+
+**A failing test can poison the next one.** `client.release()` does not roll back, so a test that fails mid-transaction returns its connection to the pool still inside an aborted transaction, and the next borrower dies with "current transaction is aborted" — one real failure reported as two. The helpers roll back before releasing.
+
+**Exit criteria [x]:** idempotency and no-oversell are proven by tests, not by argument.
+
+*49 integration tests, green from a fresh database through the same seven migrations CI runs, gated in CI on every PR. Both correctness claims are mutation-verified rather than merely asserted.*
 
 ---
 

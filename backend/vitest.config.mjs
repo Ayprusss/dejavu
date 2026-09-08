@@ -5,6 +5,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.js'],
+    // The integration suite has its own config: it needs a real database, and
+    // `npm test` must stay runnable with nothing running.
+    exclude: ['tests/integration/**'],
     setupFiles: ['./tests/setup.js'],
     coverage: {
       provider: 'v8',

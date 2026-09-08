@@ -36,9 +36,12 @@ export default [
     languageOptions: { globals: { ...globals.node, ...vitestGlobals } },
   },
   {
-    // Config files are ESM.
-    files: ['vitest.config.mjs', 'eslint.config.mjs'],
-    languageOptions: { sourceType: 'module' },
+    // Config and setup files are ESM.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
   },
   prettier,
 ];
