@@ -1,5 +1,20 @@
 # Dejavu
 
+> **TODO — re-run the full test suite before Phase 5.**
+> Last run 2026-09-10 against local Postgres: **49/49 integration tests green**
+> (`npm run test:all` in `backend/`). Two things to settle on the re-run:
+>
+> 1. **Node version.** This machine is on Node 18; the project requires `>=20`,
+>    so the suite only runs in a container or in CI right now.
+> 2. **`webhook.test.js` → "two concurrent deliveries" is not proving what it
+>    claims.** Mutating the `StripeEvent` claim back to a read-then-write leaves
+>    it **green** when the whole file runs (200/200, `created`/`duplicate`), and
+>    only fails it when the test is run in isolation (200/500). The regression is
+>    caught reliably by `concurrency.test.js`, not by this test. Likewise,
+>    reverting the atomic stock decrement fails **3** tests, not the 7 the
+>    execution plan claims. The correctness properties still hold — the
+>    *mutation-verification claims in the plan are overstated* and need correcting.
+
 Dejavu is a full-featured webstore project created to act as a functional mock of the brand "Vuja-de". It is an end-to-end e-commerce application that provides a seamless luxury shopping experience for users while offering comprehensive tools for administrators.
 
 ## 🎯 Goal

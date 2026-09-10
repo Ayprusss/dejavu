@@ -1,3 +1,35 @@
 .env
 node_modules/
 supabase/.temp/
+
+# --- Terraform ---
+# .terraform/ holds downloaded providers and the resolved backend config.
+**/.terraform/*
+
+# State must never be committed: it contains resource ids and, after a refresh,
+# SecureString values. The S3 backend is where it belongs.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Saved plans are binary and can embed sensitive values.
+tfplan
+*.tfplan
+plan.txt
+
+# Backend config carries the account id; this repo is public.
+backend.hcl
+
+# Local overrides and credentials.
+*.tfvars.local
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+
+# NOTE: .terraform.lock.hcl is deliberately NOT ignored. It pins provider
+# checksums, and committing it is what makes a CI run reproduce a local one.

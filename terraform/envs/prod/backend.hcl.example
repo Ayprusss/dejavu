@@ -1,0 +1,4 @@
+# cp backend.hcl.example backend.hcl and fill in from:
+#   terraform -chdir=../../bootstrap output state_bucket
+bucket = "dejavu-tfstate-<your-account-id>"
+region = "us-east-1"

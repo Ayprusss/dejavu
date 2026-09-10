@@ -22,7 +22,7 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 | **D** | 3 — Correctness fixes **[x]** | Webhook is transactional; stock decrements atomically |
 | **E** | 4 — Integration in CI **[x]** · E2E deferred | Idempotency and no-oversell proven by tests |
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
-| **F** | 5 — Terraform + OIDC + secrets | `plan` on PR with no AWS keys in the repo |
+| **F** | 5 — Terraform + OIDC + secrets **[~]** | `plan` on PR with no AWS keys in the repo |
 | **G** | 6 — RDS + Lambda deploy | Real Stripe webhook verifies against the Function URL |
 | **H** | 7 — Staging → prod CD | Broken build auto-rolls back |
 
@@ -60,7 +60,7 @@ Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   [done] <- larges
 Phase 3  Correctness fixes            roadmap #5a  ~1 week      [done]
 Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      [integration done; E2E deferred]
 -- CI/CD complete; everything above costs $0 --
-Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week
+Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week   [built; not applied]
 Phase 6  RDS + Lambda deploy          roadmap #2b/#4
 Phase 7  Staging -> prod CD           roadmap #6
 ```
@@ -69,7 +69,7 @@ Phases 0–4 are specified in execution detail. Phases 5–7 are specified at de
 
 ---
 
-# Phase 0 — Remediation & Repo Hygiene
+# Phase 0 — Remediation & Repo Hygiene [x]
 
 **Blocking.** Cheap, and it is what makes the roadmap #3 story ("I concluded any credential a human can copy will eventually leak") credible rather than aspirational.
 
@@ -311,19 +311,72 @@ Two things fixed it. A barrier in the Stripe stub holds every delivery until all
 
 ---
 
-# Phase 5 — Terraform + GitHub OIDC + Secrets Manager
+# Phase 5 — Terraform + GitHub OIDC + Secrets Manager [~]
 
 *Roadmap #3. Highest-signal item on the list.*
 
-**Set an AWS Budgets alarm at $5 before provisioning anything.**
+**Set an AWS Budgets alarm at $5 before provisioning anything.** Now part of the
+Terraform itself (`modules/budget`), so it cannot be forgotten.
 
-- **Modules:** `network` (VPC, 2 AZs, public + private subnets, NAT instance) · `rds` · `lambda` (ECR + function + Function URL) · `iam-oidc` · `secrets` · `observability`.
-- **State:** S3 backend + DynamoDB locking. Bootstrap the state bucket in a small `bootstrap/` config with local state applied once, then migrate — the standard chicken-and-egg.
-- **Environments:** separate `envs/dev` and `envs/prod` directories with separate state keys.
-- **OIDC trust policy** conditioned on `aud = sts.amazonaws.com` **and** `sub = repo:Ayprusss/dejavu:environment:production` — scoped to the *environment*, not just `ref:refs/heads/main`. Scoping to the environment is what stops another repo, and a fork's PR, from assuming the role. No static AWS access keys anywhere.
-- **Two roles:** a read-only plan role for PRs, a narrow apply role gated behind the protected `production` environment. Narrow beyond `lambda:*` to named resource ARNs.
-- **Secrets split:** DB credentials in **Secrets Manager** (native RDS integration and managed rotation justify the $0.40/secret/month); `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` in **SSM Parameter Store SecureString** (free tier, no rotation story to buy). Defending the split on the actual difference — rotation — is a better answer than picking one wholesale.
-- `terraform plan` posted on PR; `apply` behind the protected environment.
+- **Modules built in this phase:** `iam-oidc` · `secrets` · `budget`. The
+  `network`, `rds`, `lambda` and `observability` modules belong to Phase 6 and
+  are deliberately absent — there is nothing for them to describe yet.
+- **State:** S3 backend, **no DynamoDB table.** Terraform 1.10 added S3-native
+  locking via `use_lockfile = true` and 1.11 deprecated `dynamodb_table`; the
+  table is now a resource to babysit for no benefit. Bootstrapped in
+  `terraform/bootstrap/` with local state, then `init -migrate-state`.
+- **Environments:** `envs/dev` and `envs/prod`, separate state keys, partial
+  backend config so the account id stays out of a public repo.
+- **OIDC trust policy** conditioned on `aud = sts.amazonaws.com` **and**
+  `sub = repo:Ayprusss/dejavu:environment:production` — scoped to the
+  *environment*, not `ref:refs/heads/main`. No static AWS access keys anywhere.
+- **Two roles:** a read-only plan role for PRs, a narrow apply role gated behind
+  the protected `production` environment.
+
+### Three decisions the plan did not originally make
+
+**The CI roles live in `bootstrap/`, not in `envs/`.** If the apply role could
+manage IAM it could edit its own trust policy, and "narrow apply role" would be
+decoration. Bootstrap is applied by a human with admin credentials; CI cannot
+change the shape of its own access. The apply role additionally carries an
+explicit `Deny` on `iam:*`, which beats every `Allow` in IAM evaluation and so
+acts as a ceiling rather than a suggestion.
+
+**The Secrets Manager / Parameter Store split is deferred to Phase 6, and
+Phase 5 ships entirely on Parameter Store at $0.** The split is still the
+intent, but its whole justification is Secrets Manager's native RDS integration
+and managed rotation — and neither exists until there is an RDS instance.
+Paying $0.40/month now to hold a credential for a database that does not exist
+buys a line item and nothing else. Phase 6 moves exactly one secret, the RDS
+master credential, into Secrets Manager: the only one whose rotation story gets
+used. This keeps "everything through Phase 5 costs $0" true.
+
+**Terraform declares which secrets exist; it does not own their values.** Each
+parameter is created with a placeholder and `ignore_changes = [value]`, and the
+real value is written with `aws ssm put-parameter --overwrite`. The honest
+caveat is recorded in `terraform/README.md`: `refresh` reads SecureString values
+back, so they do land in state, which is why the state bucket is encrypted,
+versioned, TLS-only and readable by two roles. The provider's write-only
+`value_wo` argument is the clean fix and the documented upgrade path.
+
+### The dependency that is easy to miss
+
+GitHub **environment protection rules are free on public repositories and paid
+on private ones.** If this repo ever goes private on a Free plan, the rules stop
+applying — but GitHub still stamps `environment:production` into the token, so
+the trust policy still matches and the apply role becomes assumable from any
+workflow run that merely names the environment. The control fails open,
+silently, while the Terraform still reads as though it were enforced. Staying
+public is therefore a *security* decision, not just a billing one.
+
+Related: `terraform plan` on a PR **cannot work from a fork** — GitHub does not
+grant `id-token: write` to fork workflow runs, by design. That is the control
+working. Reaching for `pull_request_target` to "fix" it would hand a fork the
+credentials.
+
+**Exit criteria:** `terraform plan` runs on a PR with no AWS keys in the repo;
+the role cannot be assumed from a fork; `terraform destroy` returns the account
+to zero.
 
 ---
 
@@ -408,7 +461,7 @@ Each phase has a concrete gate:
 
 | Item | Monthly |
 |---|---|
-| Phases 0–4 | **$0** — all local and GitHub Actions (free on public repos) |
+| Phases 0–5 | **$0** — local, GitHub Actions (free on public repos), S3 state, IAM, SSM Parameter Store |
 | `db.t4g.micro` RDS | ~$12–15 (verify current free-tier terms; they changed in 2025) |
 | NAT instance t4g.nano | ~$3.50 |
 | Lambda + ECR + CloudWatch | ~$0–2 at this traffic |
