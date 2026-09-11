@@ -2,6 +2,9 @@
 node_modules/
 supabase/.temp/
 
+# Personal study notes, not project documentation.
+/docs/
+
 # --- Terraform ---
 # .terraform/ holds downloaded providers and the resolved backend config.
 **/.terraform/*
