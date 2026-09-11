@@ -5,12 +5,11 @@
 # this block, fill in the bucket name from `terraform output state_bucket`, and
 # run `terraform init -migrate-state`.
 #
-# terraform {
-#   backend "s3" {
-#     bucket       = "dejavu-tfstate-<account-id>"
-#     key          = "dejavu/bootstrap/terraform.tfstate"
-#     region       = "us-east-1"
-#     encrypt      = true
-#     use_lockfile = true
-#   }
-# }
+terraform {
+    backend "s3" {
+     key          = "dejavu/bootstrap/terraform.tfstate"
+     region       = "us-east-1"
+     encrypt      = true
+     use_lockfile = true
+   }
+ }
