@@ -307,8 +307,20 @@ data "aws_iam_policy_document" "apply" {
   }
 
   # RunInstances touches image, subnet, SG, ENI and volume resources, and only
-  # some of them take tag conditions (correction/step note). Expect to
-  # iterate on this list against real AccessDenied errors in 6.7.
+  # some of them take tag conditions (correction/step note).
+  #
+  # Found by real AccessDenied in 6.7: many of these actions create a
+  # resource *inside* an existing VPC, and EC2 authorizes the call against
+  # BOTH the new resource (which aws:RequestTag/Project covers) AND the
+  # parent VPC it's being created in (which isn't being tagged by this call,
+  # so aws:RequestTag never matches for that leg - it needs
+  # aws:ResourceTag/Project instead, since the parent VPC already carries the
+  # tag by the time a subnet/SG/instance is created inside it). Actions that
+  # touch an existing VPC/IGW at all - even ones that create nothing new,
+  # like AttachInternetGateway or CreateRoute - are granted only via
+  # ResourceTag, in the Ec2VpcModifyDelete statement below; actions that
+  # create a genuinely new resource are granted in both statements, so
+  # whichever leg IAM is checking finds a match.
   dynamic "statement" {
     for_each = var.enable_workload_infrastructure ? [1] : []
     content {
@@ -318,13 +330,10 @@ data "aws_iam_policy_document" "apply" {
         "ec2:CreateVpc",
         "ec2:CreateSubnet",
         "ec2:CreateRouteTable",
-        "ec2:CreateRoute",
         "ec2:CreateInternetGateway",
-        "ec2:AttachInternetGateway",
         "ec2:CreateSecurityGroup",
         "ec2:CreateNetworkInterface",
         "ec2:RunInstances",
-        "ec2:CreateTags",
       ]
       resources = ["*"]
 
@@ -342,6 +351,19 @@ data "aws_iam_policy_document" "apply" {
       sid    = "Ec2VpcModifyDelete"
       effect = "Allow"
       actions = [
+        # Also-created-elsewhere actions, granted here too for the
+        # parent-VPC leg of authorization (see comment above).
+        "ec2:CreateSubnet",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateNetworkInterface",
+        "ec2:RunInstances",
+        # Actions that tag or touch an existing resource, never a new one.
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:CreateRoute",
+        "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
         "ec2:ModifyVpcAttribute",
         "ec2:ModifySubnetAttribute",
         "ec2:ModifyInstanceAttribute",
@@ -362,10 +384,8 @@ data "aws_iam_policy_document" "apply" {
         "ec2:DeleteRouteTable",
         "ec2:DeleteRoute",
         "ec2:DeleteInternetGateway",
-        "ec2:DetachInternetGateway",
         "ec2:DeleteSecurityGroup",
         "ec2:DeleteNetworkInterface",
-        "ec2:DeleteTags",
       ]
       resources = ["*"]
 
@@ -404,6 +424,7 @@ data "aws_iam_policy_document" "apply" {
         "rds:DeleteDBParameterGroup",
         "rds:AddTagsToResource",
         "rds:RemoveTagsFromResource",
+        "rds:ListTagsForResource",
         "rds:RestoreDBInstanceToPointInTime",
       ]
       resources = [
@@ -424,6 +445,8 @@ data "aws_iam_policy_document" "apply" {
       actions = [
         "secretsmanager:CreateSecret",
         "secretsmanager:TagResource",
+        "secretsmanager:UntagResource",
+        "secretsmanager:ListTagsForResource",
         "secretsmanager:RotateSecret",
         "secretsmanager:DescribeSecret",
         "secretsmanager:DeleteSecret",
@@ -447,6 +470,7 @@ data "aws_iam_policy_document" "apply" {
         "lambda:ListVersionsByFunction",
         "lambda:TagResource",
         "lambda:UntagResource",
+        "lambda:ListTags",
         "lambda:CreateFunctionUrlConfig",
         "lambda:UpdateFunctionUrlConfig",
         "lambda:DeleteFunctionUrlConfig",
@@ -487,6 +511,7 @@ data "aws_iam_policy_document" "apply" {
         "logs:PutRetentionPolicy",
         "logs:TagResource",
         "logs:UntagResource",
+        "logs:ListTagsForResource",
       ]
       resources = ["arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/dejavu-*"]
     }
