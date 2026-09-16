@@ -30,7 +30,7 @@ restored from PITR once and the steps are written down.
 | 6.7 | First deploy to dev | **billing starts** | [x] |
 | 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [x] |
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [x] |
-| 6.10 | Secret rotation actually exercised | | [ ] |
+| 6.10 | Secret rotation actually exercised | | [x] |
 | 6.11 | PITR restore drill, written down | | [ ] |
 | 6.12 | Destroy → re-apply drill, cost check | | [ ] |
 | 6.13 | Docs, execution plan, merge | | [ ] |
@@ -957,13 +957,75 @@ settled before anything else is built on top.
 The whole reason one secret moved to Secrets Manager is that its rotation
 gets used. So use it once.
 
-- [ ] Warm the function, then
-      `aws secretsmanager rotate-secret --secret-id <rds!db-…>`.
-- [ ] Keep hitting `/api/ready` and `/api/products` through the rotation.
+- [x] Warm the function, then
+      `aws secretsmanager rotate-secret --secret-id <rds!db-…>`. Done twice
+      (runs 1 and 2 below).
+- [x] Keep hitting `/api/ready` and `/api/products` through the rotation.
       Expect at most a blip: a `28P01` → `invalidate()` → reconnect with the
-      new password. **No redeploy, no cold start forced.**
-- [ ] Record what you saw. If it failed, the cache TTL or invalidation from
-      6.2c is wrong. Fix it, then repeat.
+      new password. **No redeploy, no cold start forced.** Exactly that: one
+      503, then recovery on the very next request (run 2).
+- [x] Record what you saw. Nothing failed beyond the expected blip, so no
+      change to the cache TTL or invalidation from 6.2c.
+
+**Run 1 (2026-09-16, `rotate-secret` run by hand - the agent's auto-mode
+classifier blocks Secrets Manager writes, correctly):** a scripted drill hit
+`/api/ready` + `/api/products` about once a second, rotated at ~20:10Z, and
+`LastRotatedDate` landed at **20:11:08Z** (about a minute).
+- **Held connection through a rotation: verified.** 1,078 invocations from
+  20:08:58Z to 20:21:15Z, **all in one execution environment** (one log
+  stream), **zero** error/warn app lines, no `28P01`, no
+  `readiness.failed`. One `Init Duration`, at 20:08:58, the drill's own first
+  request, before the rotation; none caused by it. The RDS
+  `postgresql.log` for the hour has **no** `password authentication failed`
+  line (Postgres logs those at FATAL by default), so the server agrees. This
+  is the expected mechanism: a password change doesn't end a session that's
+  already logged in.
+- **Stale-cache reconnect (`28P01` → `invalidate()`): NOT exercised.** Found
+  by reading the timestamps back, not assumed. RDS-managed rotation leaves
+  `AWSPENDING` attached to the **same** version as the new `AWSCURRENT` once
+  it finishes, and the drill's completion check waited for `AWSPENDING` to
+  disappear, so it rode out its 10-minute cap. The reconnect after that came
+  ~10 min after the last password fetch - past the 5-min cache TTL - so it
+  simply re-fetched the new password. The path 6.2c exists for never ran.
+  Worth knowing for Phase 7's alarms: a leftover `AWSPENDING` on this secret
+  is normal, not a stuck rotation.
+- Can't tell from logs *when* the pool reconnected: `log_connections` is at
+  the engine default (off).
+
+**Run 2 (same day, drill's completion check fixed to "`AWSCURRENT` moved"):**
+the rotation was requested at 20:41:44Z and `AWSCURRENT` moved at 20:42:52Z
+(**68 s**). The drill then idled 45 s (longer than the pool's 30 s
+`idleTimeoutMillis`) and reconnected at 20:43:37Z, when the cached password
+was **115 s old**, well inside the 5-min TTL, so the old password was still
+cached.
+- **186 requests, 185× 200, exactly one non-200:** `/api/ready` → **503** at
+  20:43:37.801Z. The app logged `readiness.failed` with `code: "28P01"`,
+  `password authentication failed for user "dejavu_admin"`, raised through
+  `pool.<computed> [as query] (src/db/pool.js)`, which is the wrapper that
+  calls `invalidate()`. The RDS `postgresql.log` shows the matching `FATAL`
+  from the Lambda's private IP at the same second.
+- **Recovery on the very next request:** `/api/products` at 20:43:38.078Z →
+  200 (277 ms, which includes the Secrets Manager re-fetch plus a new TLS
+  connection), then steady ~50-60 ms 200s through the end of the drill.
+- **No cold start caused by the rotation, no redeploy:** one execution
+  environment the whole run; its single `Init Duration` is the drill's first
+  request at 20:40:42Z, before `rotate-secret`.
+- **Also settled a question run 1 couldn't answer:** a Lambda environment
+  frozen between invocations *does* close its idle pool connection on the
+  next thaw (the idle timer is overdue and fires before the request is
+  handled). The FATAL above can only come from a new connection. So after a
+  rotation, a warm environment that has sat idle for >30 s is exactly the
+  one that takes the blip.
+- **What the blip costs, and the fix if it matters:** one failed request per
+  warm environment, and only when its password was fetched <5 min before the
+  rotation *and* it reconnects before the cache expires. At the default
+  7-day schedule, that's rare. If it ever needs to be invisible, the
+  `invalidateOn28P01` wrapper in `pool.js` could retry the call once after
+  `invalidate()`. Not done here, because 6.10's bar was "at most a blip" and
+  it was met. Noted for 6.13's "what I'd do differently."
+- Drill script (not checked in): polls both endpoints about once a second,
+  calls `rotate-secret` and polls `describe-secret` from the same process, and
+  logs one JSON line per event.
 
 ---
 
@@ -1024,7 +1086,8 @@ interview". Prove that loop works before relying on it.
 - [ ] "What I'd do differently": app-level DB role instead of master (D8);
       IAM DB auth instead of a password; VPC endpoints vs NAT at higher
       traffic; RDS Proxy if concurrency × pool ever approaches
-      `max_connections`; a shared rate-limit store.
+      `max_connections`; a shared rate-limit store; retry once on `28P01`
+      after `invalidate()` so a rotation is invisible to callers (6.10).
 - [ ] Merge. `apply-dev` runs on the merge and should be a no-op plan, because
       you applied from the branch in 6.7. If it isn't, find out why before
       shipping anything else.
