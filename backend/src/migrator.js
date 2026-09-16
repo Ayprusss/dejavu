@@ -11,11 +11,18 @@
  * node-pg-migrate 9 is ESM-only (`"type": "module"` in its own package.json)
  * while this backend is CommonJS, so it has to be loaded with a dynamic
  * `import()` rather than `require()`.
+ *
+ * Unlike the api target, this handler isn't run through lambda.js, so it has
+ * to load SSM secrets itself — and, same reasoning as lambda.js, it must not
+ * require('./config/env') or anything that transitively requires it
+ * (./db/connectionOptions does) until after that load, since env.js
+ * validates at require-time. Found by actually invoking this against a real
+ * deployment in 6.7: the handler threw "Missing required environment
+ * variables" on every action because nothing had loaded them yet.
  */
 
 const path = require('path');
-const buildConnectionOptions = require('./db/connectionOptions');
-const env = require('./config/env');
+const { loadSecrets } = require('./lib/loadSecretsFromSsm');
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
@@ -33,6 +40,7 @@ const MIGRATIONS_TABLE = 'pgmigrations';
  * for the lock rather than running anything twice.
  */
 const up = async () => {
+  const buildConnectionOptions = require('./db/connectionOptions');
   const { runner } = await import('node-pg-migrate');
 
   const applied = await runner({
@@ -52,6 +60,8 @@ const up = async () => {
  * and running against prod, since a payload alone can't be trusted.
  */
 const seed = async () => {
+  const env = require('./config/env');
+
   if (env.DEPLOY_ENV !== 'dev') {
     throw new Error(
       `Refusing to seed: DEPLOY_ENV is ${JSON.stringify(env.DEPLOY_ENV)}, not "dev".`,
@@ -67,6 +77,8 @@ exports.up = up;
 exports.seed = seed;
 
 exports.handler = async (event) => {
+  await loadSecrets();
+
   const action = event?.action;
 
   if (action === 'up') {
