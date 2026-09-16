@@ -27,7 +27,7 @@ restored from PITR once and the steps are written down.
 | 6.4 | CI: image build + Trivy on every PR | $0 | [x] |
 | 6.5 | Bootstrap additions (human-applied) | ~$0 | [x] |
 | 6.6 | Terraform modules: network, rds, lambda, observability | $0 until applied | [x] |
-| 6.7 | First deploy to dev | **billing starts** | [ ] |
+| 6.7 | First deploy to dev | **billing starts** | [x] |
 | 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [ ] |
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [ ] |
 | 6.10 | Secret rotation actually exercised | | [ ] |
@@ -687,39 +687,107 @@ New modules, wired into **`envs/dev` only** (D6). `terraform fmt` and
 
 Order matters (correction 9). Do it from the branch, before merging.
 
-1. [ ] Apply bootstrap (6.5) with SSO admin. Put the new outputs into GitHub
-       variables.
-2. [ ] Build and push the first images with the push role's permissions. For
-       the very first push, a manual push from your machine under SSO is fine:
-       `docker buildx build --platform linux/arm64 --target api --build-arg GIT_SHA=$(git rev-parse HEAD) -t <repo>:$(git rev-parse HEAD) --push .`
-       (and the same for `migrator`). Then add the `main`-only push job to CI
-       so later images are built by CI from a known SHA.
-3. [ ] **Test the apply role before the merge does.** Run `terraform.yml` via
-       `workflow_dispatch` (environment `dev`) **from this branch**. The token
-       carries `environment:dev` whatever the branch, so this exercises the
-       real apply role's permissions. If the `dev` GitHub environment
-       restricts deployment branches, allow this branch temporarily. Expect a
-       few rounds of "AccessDenied → add the action → re-run"; keep a list.
-4. [ ] Put real values into SSM (test mode):
-       `JWT_SECRET` (fresh, 48 random bytes), `STRIPE_SECRET_KEY` (`sk_test_…`).
-       `STRIPE_WEBHOOK_SECRET` comes in 6.8.
-5. [ ] Check the RDS-managed secret's tags against 6.5's condition
-       (`aws secretsmanager describe-secret`).
-6. [ ] `aws lambda invoke --function-name dejavu-dev-migrator --payload '{"action":"up"}' --cli-binary-format raw-in-base64-out out.json`
-       → all seven migrations listed.
-7. [ ] `… --payload '{"action":"seed"}'` → seeded.
-8. [ ] Smoke test: `curl <url>/api/status` (200), `/api/ready` (200, which
-       proves Lambda → RDS over TLS with the lazy password), `/api/version`
-       (matches the SHA), `/api/products` (the seeded items).
-9. [ ] **Remember that SSM values are read at cold start.** After any
-       `put-parameter`, force fresh execution environments by bumping a
-       harmless env var (e.g. `CONFIG_REV`) with
-       `aws lambda update-function-configuration`.
+1. [x] Bootstrap (6.5) already applied with admin credentials. Outputs
+       already in GitHub variables (6.5).
+2. [x] Built and pushed the first images (`:bootstrap` tag) with the admin
+       credentials in this session, via `docker buildx build --platform
+       linux/arm64 --provenance=false --sbom=false ...`. `--provenance=false
+       --sbom=false` turned out to be load-bearing, not cosmetic - buildx's
+       default attestation attachment produces an OCI image index that
+       Lambda's `CreateFunction` rejects outright (see round 7 below); added
+       the same two flags to `ci.yml`'s `push-image` job so CI's future
+       SHA-tagged pushes don't hit it either.
+3. [x] **Tested the apply role before merge.** `dev`'s deployment branch
+       policy was already unrestricted (`null`), so no temporary allow was
+       needed. Ran `terraform.yml` via `workflow_dispatch` from this branch
+       **eight times** before a clean apply - every failure diagnosed from
+       real `AccessDenied`/API errors and fixed in `modules/iam-oidc`,
+       `modules/network`, `modules/lambda`, or `envs/dev`, each round
+       committed, pushed and re-dispatched. In order:
+     1. `budgets:ListTagsForResource` etc. missing - the very "drift" 6.5
+        called unrelated cleanup was actually load-bearing (corrected there).
+     2. EC2 create actions authorize against **both** the new resource and
+        the pre-existing parent VPC/IGW; `RequestTag` only covers the new
+        resource's leg, so the parent leg needs `ResourceTag` instead. Also
+        missing `rds`/`logs`/`lambda` `ListTagsForResource`/`ListTags` (same
+        provider tag-readback pattern as budgets).
+     3. `ec2:CreateTags` on a brand-new subnet/SG/IGW needs `RequestTag`, not
+        `ResourceTag` - the resource has no tags yet. Missing
+        `ecr:DescribeRepositories` for the Lambda module's repo lookup.
+     4. Missing `ecr:ListTagsForResource` (same pattern, on the ECR
+        data-source read).
+     5. `aws_vpc_security_group_{ingress,egress}_rule` creates a distinct
+        `security-group-rule` ARN resource (AWS's newer per-rule model),
+        needing `RequestTag`, not `ResourceTag`. Also: this account rejected
+        RDS `backup_retention_period = 7` with `FreeTierRestrictionError`;
+        dropped dev to `1` (still > 0, so 6.11's PITR stays possible).
+     6. `RunInstances` is authorized against every resource type it touches;
+        the auto-created network interface and the AMI never carry our tag
+        (the instance's tag spec doesn't extend to them), so neither
+        condition could ever match - added a narrow unconditioned grant on
+        exactly those two resource types. Also: RDS's `storage_encrypted`
+        needs its own `kms:CreateGrant`/`DescribeKey`/etc. (`ViaService=rds`)
+        even though the default `aws/rds` key already existed and was
+        enabled.
+     7. `t4g.nano` isn't Free Tier-eligible on this account (`t4g.micro` and
+        `t4g.small` are, per `aws ec2 describe-instance-types`) - bumped the
+        NAT instance size, keeping D2's arm64 choice. Both `:bootstrap`
+        images failed `CreateFunction` with an unsupported manifest media
+        type - the buildx attestation issue described in step 2.
+     8. **Succeeded.** VPC, NAT, RDS (encrypted, available), both Lambda
+        functions and the Function URL all created cleanly.
+4. [x] Real values set in SSM: a fresh 48-random-byte `JWT_SECRET`, and the
+       `sk_test_…` key already sitting in the local `backend/.env` (already
+       test-mode, satisfying 6.0's "dev never holds a live key").
+       `STRIPE_WEBHOOK_SECRET` stays for 6.8.
+5. [x] RDS-managed secret's tags checked via `aws secretsmanager
+       describe-secret`: `aws:rds:primaryDBInstanceArn` =
+       `arn:aws:rds:us-east-1:059317926288:db:dejavu-dev`, exactly matching
+       `modules/workload-roles`'s condition - no fix needed.
+6. [x] `{"action":"up"}` → all seven migrations listed, after two more real
+       fixes found by actually invoking it (not IAM - application and
+       infrastructure bugs):
+     - The migrator handler isn't run through `lambda.js`, so nothing loaded
+       SSM secrets before its top-level `require`s hit `config/env.js`'s
+       require-time validation. Extracted the SSM-loading logic into
+       `src/lib/loadSecretsFromSsm.js`, shared by both entrypoints; migrator
+       now awaits it first and defers its `env`/`connectionOptions` requires
+       into `up()`/`seed()`.
+     - NAT still didn't work after the images were fixed:
+       `EHOSTUNREACH`/`ETIMEDOUT` reaching real AWS IPs through it, even with
+       `ip_forward=1` and the MASQUERADE rule both confirmed correct.
+       Diagnosed by temporarily attaching an SSM instance profile (created,
+       used, fully detached and deleted afterward - the "no instance
+       profile" default is unchanged) and running `iptables -L FORWARD -n
+       -v` directly: AL2023's `iptables-services` package ships a default
+       ruleset whose filter table ends `-A FORWARD -j REJECT`, loaded by
+       `systemctl enable --now iptables`, in a completely different table
+       from the one the NAT rule touches. Fixed `modules/network`'s
+       `user_data` with two `ACCEPT` rules inserted ahead of it (one for
+       `RELATED,ESTABLISHED` reply traffic, one for the VPC CIDR's outbound
+       leg), applied live via SSM first to confirm, then folded into
+       Terraform and re-applied for real (a clean stop/modify/start, not a
+       full replace - same instance ID, same private IP).
+7. [x] `{"action":"seed"}` → `{"seeded":true}`.
+8. [x] Smoke test, all four passing against the real Function URL:
+       `/api/status` (200), `/api/ready` (200 - proves Lambda → RDS over TLS
+       with the lazy password), `/api/version` (`{"sha":"4100dc8"}`, matching
+       the deployed image), `/api/products` (seeded items returned). One more
+       fix needed first: `DB_SSL_CA_PATH` was hardcoded to `/app/certs/...`,
+       correct for the api image's `WORKDIR /app` but not the migrator's AWS
+       base image (`/var/task`) - removed the override entirely, since
+       `connectionOptions.js`'s own `__dirname`-relative fallback already
+       resolves correctly for both.
+9. [ ] Not yet exercised - no `put-parameter` has happened since the
+       functions came up warm. Applies whenever `STRIPE_WEBHOOK_SECRET` is
+       set in 6.8.
 
 Note: private RDS means no `psql` from your laptop, by design. Inspect data
 through the app's own admin endpoints and CloudWatch. Session Manager port
-forwarding through the NAT would need an instance profile. It's a reasonable
-Phase 7+ addition, but it's an addition, not a default.
+forwarding through the NAT would need an instance profile - used exactly
+once, temporarily, for the NAT debug above, and fully removed afterward. A
+standing version of it is a reasonable Phase 7+ addition, but it's an
+addition, not a default.
 
 ---
 
