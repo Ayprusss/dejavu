@@ -332,6 +332,52 @@ jobs:
           ignore-unfixed: true
           trivyignores: backend/.trivyignore
 
+  # Pushes the image `image` just built and scanned to ECR, tagged by SHA.
+  # Runs only on `main`, after an image already exists there for envs/dev's
+  # Lambda to reference (6.7) — a PR, including from a fork, never gets AWS
+  # credentials.
+  push-image:
+    name: push-image (${{ matrix.target }})
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, migrator]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      # No access keys. This exchanges the job OIDC token for credentials
+      # that expire in an hour, same as terraform.yml's plan/apply roles.
+      - name: Assume the ECR push role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_PUSH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: dejavu-push-${{ matrix.target }}-${{ github.run_id }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      # Rebuilds from the same GHA cache the `image` job just populated
+      # (same scope), so this is a cache hit, not a second real build - the
+      # thing that actually changes is `push: true` and the destination tag.
+      - name: Push ${{ matrix.target }}
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: ${{ matrix.target }}
+          platforms: linux/arm64
+          push: true
+          tags: ${{ matrix.target == 'api' && vars.ECR_API_REPO || vars.ECR_MIGRATOR_REPO }}:${{ github.sha }}
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+
   # Aggregate gate: this is the single check to require in branch protection,
   # so adding a job above does not mean editing the protection rule.
   ci:
@@ -347,6 +393,7 @@ jobs:
         migrations,
         test-integration,
         image,
+        push-image,
       ]
     if: always()
     steps:
@@ -360,4 +407,5 @@ jobs:
           echo "migrations:     ${{ needs.migrations.result }}"
           echo "integration:    ${{ needs.test-integration.result }}"
           echo "image:          ${{ needs.image.result }}"
+          echo "push-image:     ${{ needs.push-image.result }}"
           [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]

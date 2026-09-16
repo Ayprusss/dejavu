@@ -104,8 +104,9 @@ module "lambda" {
   db_name       = module.rds.db_name
   db_secret_arn = module.rds.master_user_secret_arn
 
-  # Supplied at apply time (6.7 step 2 pushes this SHA to ECR first):
-  #   terraform apply -var initial_image_tag=$(git rev-parse HEAD)
+  # Defaults to "bootstrap" - 6.7 step 2 pushes both images tagged
+  # :bootstrap by hand before the first apply, and every apply after that
+  # ignores this argument (D5), so CI's automated apply never needs it.
   initial_image_tag = var.initial_image_tag
 
   # Log groups must exist before the functions that write to them.

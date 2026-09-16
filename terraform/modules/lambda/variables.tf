@@ -12,13 +12,18 @@ variable "lambda_security_group_id" {
 
 variable "initial_image_tag" {
   description = <<-DESC
-    Git SHA (or other tag) of the images already pushed to ECR before the
-    first apply (6.7 step 2). Used only to give the Lambda a valid image_uri
-    on creation - every apply after that ignores this argument
-    (lifecycle.ignore_changes), because code ships via
-    `aws lambda update-function-code`, not Terraform (D5).
+    Tag of the images already pushed to ECR before the first apply (6.7 step
+    2). Used only to give the Lambda a valid image_uri on creation - every
+    apply after that ignores this argument (lifecycle.ignore_changes),
+    because code ships via `aws lambda update-function-code`, not Terraform
+    (D5). Defaults to the fixed "bootstrap" tag pushed once, by hand, before
+    the first apply - not a git SHA, because CI's `terraform apply
+    -auto-approve` (terraform.yml) passes no value for this, and a SHA
+    default would go stale on the very next commit while still being
+    permanently ignored after creation.
   DESC
   type        = string
+  default     = "bootstrap"
 }
 
 variable "memory_size" {
