@@ -20,3 +20,15 @@ variable "state_bucket_name" {
   type        = string
   default     = null
 }
+
+variable "budget_notification_email" {
+  description = <<-DESC
+    Where the account-wide backstop budget alert goes.
+
+    No default and never committed: this repository is public, and an email
+    address in a public repo is a spam magnet. Supply it as
+    TF_VAR_budget_notification_email when applying by hand.
+  DESC
+  type        = string
+  sensitive   = true
+}

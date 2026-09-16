@@ -170,6 +170,12 @@ module "roles_dev" {
   # Merging to main deploys dev automatically, so the gate is the branch, not
   # a reviewer. GitHub still stamps `environment:dev` into the token.
   github_environment = "dev"
+
+  # Phase 6 (D6: dev only). Prod's apply role stays at its Phase 5 shape until
+  # Phase 7.
+  enable_workload_infrastructure = true
+  workload_role_arn              = module.workload_roles.workload_role_arns["dev"]
+  ecr_repository_arns            = values(module.workload_roles.ecr_repository_arns)
 }
 
 module "roles_prod" {
@@ -186,4 +192,70 @@ module "roles_prod" {
   # token once GitHub has run the environment's protection rules, so a required
   # reviewer stands between a merge and an apply.
   github_environment = "production"
+}
+
+# ---------------------------------------------------------------------------
+# RDS service-linked role
+# ---------------------------------------------------------------------------
+
+# The first RDS instance in an account creates this automatically, but that
+# creation call is iam:CreateServiceLinkedRole, and the apply role's Deny
+# blocks it (correction 1). Created here, once, by hand. If this role already
+# exists in the account (check with `aws iam get-role --role-name
+# AWSServiceRoleForRDS` before applying), import it instead - creating a
+# second one is an error.
+resource "aws_iam_service_linked_role" "rds" {
+  aws_service_name = "rds.amazonaws.com"
+}
+
+# ---------------------------------------------------------------------------
+# Cost-allocation tag
+# ---------------------------------------------------------------------------
+
+# Lets modules/budget's cost_filter scope each environment's budget to its own
+# resources. AWS can take up to 24h to reflect this in Cost Explorer and it
+# is not retroactive, so activating it here (instead of leaving it a manual
+# console click) only starts that clock sooner.
+resource "aws_ce_cost_allocation_tag" "environment" {
+  tag_key = "Environment"
+  status  = "Active"
+}
+
+# ---------------------------------------------------------------------------
+# ECR, the image push role, and the per-environment Lambda execution role
+# ---------------------------------------------------------------------------
+
+module "workload_roles" {
+  source = "../modules/workload-roles"
+
+  aws_region        = var.aws_region
+  account_id        = data.aws_caller_identity.current.account_id
+  github_repository = var.github_repository
+  oidc_provider_arn = aws_iam_openid_connect_provider.github.arn
+
+  # Only dev exists in Phase 6 (D6). Prod's entry joins this map in Phase 7,
+  # once envs/prod has an RDS instance to scope its Secrets Manager grant
+  # against.
+  workload_environments = {
+    dev = {
+      rds_identifier = "dejavu-dev"
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Account-wide backstop budget
+#
+# Each environment's own budget (modules/budget in envs/dev, envs/prod) is
+# scoped to its Environment tag. Some charges - notably public IPv4 - don't
+# carry that tag, so this one watches the whole account and stays unscoped.
+# ---------------------------------------------------------------------------
+
+module "budget_backstop" {
+  source = "../modules/budget"
+
+  environment         = "account"
+  limit_usd           = "40"
+  notification_email  = var.budget_notification_email
+  cost_filter_enabled = false
 }

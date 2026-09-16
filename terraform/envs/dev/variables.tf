@@ -12,6 +12,16 @@ variable "budget_limit_usd" {
   default = "5"
 }
 
+variable "initial_image_tag" {
+  description = <<-DESC
+    Git SHA of the images pushed to ECR before the first apply (6.7 step 2).
+    Gives the Lambda functions a valid image_uri on creation only - every
+    apply after that ignores the argument (D5). No default: the first apply
+    must supply a real, already-pushed tag or the create fails.
+  DESC
+  type        = string
+}
+
 variable "budget_notification_email" {
   description = <<-DESC
     Where budget alerts go.

@@ -260,6 +260,253 @@ data "aws_iam_policy_document" "apply" {
     actions   = ["tag:GetResources", "sts:GetCallerIdentity"]
     resources = ["*"]
   }
+
+  # --- Everything below is Phase 6, and only present when
+  # enable_workload_infrastructure is true (dev only, per D6). ---
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "PassWorkloadRoleToLambda"
+      effect    = "Allow"
+      actions   = ["iam:PassRole"]
+      resources = [var.workload_role_arn]
+
+      condition {
+        test     = "StringEquals"
+        variable = "iam:PassedToService"
+        values   = ["lambda.amazonaws.com"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "ReadWorkloadRole"
+      effect    = "Allow"
+      actions   = ["iam:GetRole"]
+      resources = [var.workload_role_arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "Ec2VpcDescribe"
+      effect    = "Allow"
+      actions   = ["ec2:Describe*"]
+      resources = ["*"]
+    }
+  }
+
+  # RunInstances touches image, subnet, SG, ENI and volume resources, and only
+  # some of them take tag conditions (correction/step note). Expect to
+  # iterate on this list against real AccessDenied errors in 6.7.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2VpcCreate"
+      effect = "Allow"
+      actions = [
+        "ec2:CreateVpc",
+        "ec2:CreateSubnet",
+        "ec2:CreateRouteTable",
+        "ec2:CreateRoute",
+        "ec2:CreateInternetGateway",
+        "ec2:AttachInternetGateway",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateNetworkInterface",
+        "ec2:RunInstances",
+        "ec2:CreateTags",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "aws:RequestTag/Project"
+        values   = ["dejavu"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2VpcModifyDelete"
+      effect = "Allow"
+      actions = [
+        "ec2:ModifyVpcAttribute",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:AssociateAddress",
+        "ec2:DisassociateAddress",
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        "ec2:TerminateInstances",
+        "ec2:DeleteVpc",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteRoute",
+        "ec2:DeleteInternetGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteNetworkInterface",
+        "ec2:DeleteTags",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "aws:ResourceTag/Project"
+        values   = ["dejavu"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "RdsDescribe"
+      effect    = "Allow"
+      actions   = ["rds:Describe*"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "RdsManageOwn"
+      effect = "Allow"
+      actions = [
+        "rds:CreateDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:CreateDBSubnetGroup",
+        "rds:ModifyDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup",
+        "rds:CreateDBParameterGroup",
+        "rds:ModifyDBParameterGroup",
+        "rds:DeleteDBParameterGroup",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource",
+        "rds:RestoreDBInstanceToPointInTime",
+      ]
+      resources = [
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:db:dejavu-*",
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:subgrp:dejavu-*",
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:pg:dejavu-*",
+      ]
+    }
+  }
+
+  # For the RDS-managed master password secret (manage_master_user_password).
+  # Reading its value belongs to the workload role, not this one.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageRdsManagedSecret"
+      effect = "Allow"
+      actions = [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource",
+        "secretsmanager:RotateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:DeleteSecret",
+      ]
+      resources = ["arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:rds!*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageLambda"
+      effect = "Allow"
+      actions = [
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListVersionsByFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:CreateFunctionUrlConfig",
+        "lambda:UpdateFunctionUrlConfig",
+        "lambda:DeleteFunctionUrlConfig",
+        "lambda:GetFunctionUrlConfig",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:GetPolicy",
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteFunctionConcurrency",
+        "lambda:GetFunctionConcurrency",
+      ]
+      resources = ["arn:aws:lambda:${var.aws_region}:${var.account_id}:function:dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure && length(var.ecr_repository_arns) > 0 ? [1] : []
+    content {
+      sid    = "ReadEcrImages"
+      effect = "Allow"
+      actions = [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages",
+      ]
+      resources = var.ecr_repository_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageLambdaLogGroups"
+      effect = "Allow"
+      actions = [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+      ]
+      resources = ["arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "DescribeLambdaLogGroups"
+      effect    = "Allow"
+      actions   = ["logs:DescribeLogGroups"]
+      resources = ["*"]
+    }
+  }
+
+  # The apply role only has /dejavu/<env>/* today; the NAT instance's AMI
+  # comes from AWS's own public parameter namespace.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "ReadPublicAmiParameter"
+      effect    = "Allow"
+      actions   = ["ssm:GetParameter"]
+      resources = ["arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "apply" {
@@ -274,15 +521,67 @@ resource "aws_iam_role_policy" "apply" {
 # every Allow in IAM evaluation, which is what makes this a ceiling rather than
 # a suggestion.
 data "aws_iam_policy_document" "apply_boundary_deny" {
-  statement {
-    sid    = "NoIdentityManagement"
-    effect = "Deny"
-    actions = [
-      "iam:*",
-      "organizations:*",
-      "account:*",
-    ]
-    resources = ["*"]
+  # Phase 5 shape: no IAM access at all. Unchanged for any role where
+  # enable_workload_infrastructure is false (prod, until Phase 7).
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [] : [1]
+    content {
+      sid    = "NoIdentityManagement"
+      effect = "Deny"
+      actions = [
+        "iam:*",
+        "organizations:*",
+        "account:*",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  # Phase 6 shape: IAM is denied everywhere except the one named workload
+  # role, and even there only Get*/List* and PassRole survive - every
+  # mutating action on that role is denied by the second statement below. IAM
+  # can't subtract actions from inside one statement, hence two Denies. The
+  # net effect is read + PassRole on one role, and nothing else in IAM.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid           = "NoIdentityManagementExceptWorkloadRole"
+      effect        = "Deny"
+      actions       = ["iam:*"]
+      not_resources = [var.workload_role_arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "NoOrgOrAccountManagement"
+      effect = "Deny"
+      actions = [
+        "organizations:*",
+        "account:*",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "NoMutatingWorkloadRoleManagement"
+      effect = "Deny"
+      actions = [
+        "iam:Create*",
+        "iam:Delete*",
+        "iam:Put*",
+        "iam:Attach*",
+        "iam:Detach*",
+        "iam:Update*",
+        "iam:Tag*",
+        "iam:Untag*",
+      ]
+      resources = [var.workload_role_arn]
+    }
   }
 }
 

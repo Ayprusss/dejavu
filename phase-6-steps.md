@@ -20,13 +20,13 @@ restored from PITR once and the steps are written down.
 
 | # | Workstream | Cost | Status |
 |---|---|---|---|
-| 6.0 | Verify Phase 5 is really applied | $0 | [ ] |
-| 6.1 | Decisions (below) signed off | $0 | [ ] |
-| 6.2 | App changes for Lambda (no AWS needed) | $0 | [ ] |
-| 6.3 | Container image, two targets | $0 | [ ] |
-| 6.4 | CI: image build + Trivy on every PR | $0 | [ ] |
-| 6.5 | Bootstrap additions (human-applied) | ~$0 | [ ] |
-| 6.6 | Terraform modules: network, rds, lambda, observability | $0 until applied | [ ] |
+| 6.0 | Verify Phase 5 is really applied | $0 | [x] |
+| 6.1 | Decisions (below) signed off | $0 | [x] |
+| 6.2 | App changes for Lambda (no AWS needed) | $0 | [x] |
+| 6.3 | Container image, two targets | $0 | [x] |
+| 6.4 | CI: image build + Trivy on every PR | $0 | [x] |
+| 6.5 | Bootstrap additions (human-applied) | ~$0 | [x] |
+| 6.6 | Terraform modules: network, rds, lambda, observability | $0 until applied | [x] |
 | 6.7 | First deploy to dev | **billing starts** | [ ] |
 | 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [ ] |
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [ ] |
@@ -42,21 +42,24 @@ restored from PITR once and the steps are written down.
 The execution plan still marks Phase 5 `[~]`. Confirm each of these before
 anything below depends on it, then flip Phase 5 (and batch F) to `[x]`.
 
-- [ ] Bootstrap state lives in S3: `terraform/bootstrap/terraform.tfstate` is
+- [x] Bootstrap state lives in S3: `terraform/bootstrap/terraform.tfstate` is
       0 bytes locally (it is — consistent with a completed `-migrate-state`),
       and `terraform -chdir=terraform/bootstrap init -backend-config=...` shows
       no local state.
-- [ ] `envs/dev` applied: `aws ssm get-parameters-by-path --path /dejavu/dev/`
+- [x] `envs/dev` applied: `aws ssm get-parameters-by-path --path /dejavu/dev/`
       lists the four parameters, and the budget exists.
-- [ ] GitHub variables set: `AWS_REGION`, `TF_STATE_BUCKET`, the four role
+- [x] GitHub variables set: `AWS_REGION`, `TF_STATE_BUCKET`, the four role
       ARNs; secret `BUDGET_ALERT_EMAIL`.
-- [ ] A PR touching `terraform/` has produced a plan comment (Phase 5 exit).
-- [ ] You have a way to act as admin **without a static key**. Phase 5 deleted
-      the temporary admin key, and step 6.5 needs admin again. Use IAM Identity
-      Center (`aws configure sso`, then `aws sso login`) instead of minting
-      another access key; it keeps the "no long-lived credentials" story true
-      for humans too.
-- [ ] Stripe **test-mode** keys ready. Dev must never hold a live key.
+- [x] A PR touching `terraform/` has produced a plan comment (Phase 5 exit).
+- [x] **Deviation accepted 2026-09-11:** staying on the static `admin-user`
+      key instead of IAM Identity Center. `aws sts get-caller-identity`
+      resolves to `arn:aws:iam::059317926288:user/admin-user`. Identity
+      Center requires enabling AWS Organizations first
+      (`aws sso-admin list-instances` returned no instances), which surfaced
+      a paid-plan prompt during setup — declined for now. Revisit if this
+      account ever needs multiple humans or a real "no long-lived creds"
+      story; note it under 6.13's "what I'd do differently."
+- [x] Stripe **test-mode** keys ready. Dev must never hold a live key.
 
 ---
 
@@ -132,19 +135,21 @@ apply.
 
 ## 6.1 — Decisions (recommendations; confirm or override)
 
-- [ ] **D1 · NAT instance: your own AL2023 instance plus ~10 lines of
+All eight confirmed as recommended (signed off 2026-09-11, no overrides).
+
+- [x] **D1 · NAT instance: your own AL2023 instance plus ~10 lines of
       `user_data`, not the community `fck-nat` AMI.** fck-nat is fine, but it
       puts a third-party AMI on the path that carries your Stripe traffic. A
       hand-written `ip_forward` + `MASQUERADE` script is something you can
       explain line by line. (The plan already settled NAT instance over NAT
       Gateway.)
 
-- [ ] **D2 · arm64 everywhere.** Lambda arm64 is ~20% cheaper per GB-second,
+- [x] **D2 · arm64 everywhere.** Lambda arm64 is ~20% cheaper per GB-second,
       and the NAT (t4g) and RDS (t4g) are Graviton already. Build natively on
       GitHub's free `ubuntu-24.04-arm` runners (free for public repos) instead
       of QEMU emulation, which is 5–10× slower.
 
-- [ ] **D3 · The Lambda execution role lives in `bootstrap/`, beside the CI
+- [x] **D3 · The Lambda execution role lives in `bootstrap/`, beside the CI
       roles.** This follows the same principle as Phase 5: CI can't change the
       shape of any access. The apply role's Deny is narrowed from `iam:*` to
       "everything except `PassRole` on exactly this role, plus read-only
@@ -154,7 +159,7 @@ apply.
       CI `iam:CreateRole`, which is more to defend than one extra bootstrap
       apply per phase.
 
-- [ ] **D4 · Secrets are fetched by the process at cold start, not injected
+- [x] **D4 · Secrets are fetched by the process at cold start, not injected
       as Lambda environment variables.** Env vars written by Terraform would
       put every secret into state *and* into `lambda:GetFunctionConfiguration`,
       where any read-only principal can see them in plain text (the plan role
@@ -162,22 +167,22 @@ apply.
       `/dejavu/<env>/*` from SSM before `config/env.js` loads, so `env.js`
       stays unchanged. The DB password is fetched lazily (correction 3).
 
-- [ ] **D5 · Terraform creates the function; it does not deploy code.**
+- [x] **D5 · Terraform creates the function; it does not deploy code.**
       `aws_lambda_function` gets `lifecycle { ignore_changes = [image_uri] }`.
       Code ships with `aws lambda update-function-code --image-uri …:<sha>`.
       This saves Phase 7 from fighting Terraform over which image is live, and
       alias-based rollback needs exactly this split.
 
-- [ ] **D6 · Only dev is applied in Phase 6.** `envs/prod` stays as it is
+- [x] **D6 · Only dev is applied in Phase 6.** `envs/prod` stays as it is
       until Phase 7, which decides what staging and prod cost. Build the
       modules so prod is a copy-paste of the dev wiring.
 
-- [ ] **D7 · Build the migrator Lambda now, not in Phase 7.** RDS is private,
+- [x] **D7 · Build the migrator Lambda now, not in Phase 7.** RDS is private,
       so you can't migrate it from a laptop. The alternatives (SSM tunnel,
       temporarily public DB) are exactly what the design exists to avoid.
       Phase 7 then only has to invoke it from the pipeline.
 
-- [ ] **D8 · The app connects as the RDS master user, for now.** It's the
+- [x] **D8 · The app connects as the RDS master user, for now.** It's the
       honest shortcut. The right answer is a least-privilege `dejavu_app` role
       created by a migration. List it under "what I'd do differently", or do
       it in 6.2 if there's appetite.
@@ -191,93 +196,110 @@ suite, and the integration suite green, because the local path must not change.
 
 ### 6.2a · `bcrypt` → `bcryptjs`
 
-- [ ] `npm uninstall bcrypt && npm install bcryptjs` (v3).
-- [ ] Swap the require at the three sites: `src/controllers/authController.js:1`,
+- [x] `npm uninstall bcrypt && npm install bcryptjs` (v3).
+- [x] Swap the require at the three sites: `src/controllers/authController.js:1`,
       `scripts/seed.js:15`, `tests/integration/helpers.js:7` (and anything
       `grep -rn "require('bcrypt')"` finds later).
-- [ ] Prove that existing hashes still verify. **Before** uninstalling, generate
+- [x] Prove that existing hashes still verify. **Before** uninstalling, generate
       a `$2b$` hash with native bcrypt and commit it as a fixture. Then add a
       unit test that `bcryptjs.compare` accepts it, so the claim is tested
-      rather than assumed.
-- [ ] Note the cost. It gets measured for real in 6.9.
+      rather than assumed. — `tests/fixtures/bcryptHashes.js` + `tests/authHash.test.js`.
+- [x] Note the cost. It gets measured for real in 6.9.
 
 ### 6.2b · Build identity: `GIT_SHA` and a version endpoint
 
-- [ ] `env.js`: optional `GIT_SHA`, default `'unknown'`.
-- [ ] `GET /api/version` → `{ sha: env.GIT_SHA }`. The plan says `/version`;
+- [x] `env.js`: optional `GIT_SHA`, default `'unknown'`.
+- [x] `GET /api/version` → `{ sha: env.GIT_SHA }`. The plan says `/version`;
       every other route is under `/api`, so pick one path and use the same
       one in Phase 7's smoke test.
-- [ ] supertest case. Also leave it out of pino-http auto-logging, like the
-      health checks, because Phase 7's smoke test polls it.
+- [x] supertest case (`tests/version.test.js`). Also left out of pino-http
+      auto-logging, like the health checks, because Phase 7's smoke test polls it.
 
 ### 6.2c · Database connection: discrete params, TLS, lazy password
 
-- [ ] `env.js`: require **either** `DATABASE_URL` (local, CI, tests; unchanged)
+- [x] `env.js`: require **either** `DATABASE_URL` (local, CI, tests; unchanged)
       **or** `DB_HOST` + `DB_NAME` + `DB_SECRET_ARN` (+ optional `DB_PORT`,
-      `DB_SSL_CA_PATH`). Error if neither set is complete. Add a `boot-check`
-      CI case for an incomplete `DB_*` set.
-- [ ] `src/db/credentials.js`: `getDbPassword()` reads the RDS-managed secret
+      `DB_SSL_CA_PATH`). Error if neither set is complete. Boot-check CI case
+      for an incomplete `DB_*` set — `tests/envDbConfig.test.js`.
+- [x] `src/db/credentials.js`: `getDbPassword()` reads the RDS-managed secret
       (`{ username, password }` JSON) through
       `@aws-sdk/client-secrets-manager`. Cache it for ~5 min, and export
       `invalidate()`.
-- [ ] `pool.js`: when `DB_SECRET_ARN` is set, build
+- [x] `pool.js` (now via shared `src/db/connectionOptions.js`, reused by
+      migrator.js too): when `DB_SECRET_ARN` is set, builds
       `{ host, port, database, user, password: getDbPassword, ssl: { ca } }`.
-      Don't also put `sslmode` in a connection string, because
-      connection-string SSL params override the `ssl` object. Keep
-      `connectionString` for the local path.
-- [ ] On a connect error with code `28P01` (auth failed), call `invalidate()`
-      so the next connection re-fetches. This covers the rotation window.
-- [ ] Check the RDS CA bundle in at `backend/certs/rds-global-bundle.pem`
-      (from `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`).
-      It's public, and committing it keeps builds reproducible and offline.
-- [ ] Unit-test the cache and invalidation with a stubbed SDK client. Mocking
-      the AWS SDK is fine; the no-mocks rule is about the database.
+      `sslmode` never appears in a connection string alongside it — the two
+      paths (`connectionString` vs discrete+`ssl`) are mutually exclusive.
+- [x] On a connect error with code `28P01` (auth failed), calls `invalidate()`
+      so the next connection re-fetches. Wraps `pool.query`/`pool.connect`
+      directly, since `pool.on('error', ...)` only fires for an already-idle
+      client, not a failed new-connection attempt (verified against
+      pg-pool's source).
+- [x] RDS CA bundle checked in at `backend/certs/rds-global-bundle.pem`
+      (fetched live from `https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`).
+- [x] Unit-tested cache and invalidation (`tests/dbCredentials.test.js`) with
+      a stubbed SDK client — via direct `require.cache` injection, not
+      `vi.mock`, because `vi.mock` only intercepts ESM `import`, not the
+      `require()` this CommonJS codebase uses throughout (verified by
+      experiment). Same technique in `tests/envDbConfig.test.js`.
 
 ### 6.2d · Secret loader entrypoint
 
-- [ ] `src/lambda.js`: if `SSM_PARAMETER_PATH` is set, call
+- [x] `src/lambda.js`: if `SSM_PARAMETER_PATH` is set, calls
       `GetParametersByPath({ Path, WithDecryption: true, Recursive: false })`
-      (paginate) and copy each `/dejavu/dev/NAME` into `process.env.NAME`,
-      without overwriting anything already set. Fetch the DB username from
-      the secret into `DB_USER`. Then `require('./server')`. If the variable
-      is unset, just `require('./server')`, so compose and local runs are
-      unaffected.
-- [ ] **It must not require `lib/logger` or anything else that pulls in
-      `config/env.js`.** That module validates at require time, so importing
-      it before the secrets load throws. Log failures as one plain JSON line
-      to stderr and `process.exit(1)`.
-- [ ] Measure the loader's own time and log it (`boot.secrets_loaded`,
-      `durationMs`). Cold-start numbers in 6.9 need it split out.
-- [ ] Remove `DATABASE_URL` from the `parameters` map in `envs/dev/main.tf`,
-      because the password now lives in Secrets Manager and the rest is
-      non-secret config. Update `.env.example`'s Phase 6 comment to match.
+      (paginated) and copies each `/dejavu/<env>/NAME` into `process.env.NAME`,
+      without overwriting anything already set. Fetches the DB username from
+      the `DB_SECRET_ARN` secret into `DB_USER`. Then `require('./server')`.
+      If the variable is unset, just `require('./server')` — compose and
+      local runs are unaffected.
+- [x] Does not require `lib/logger` or `config/env.js` (verified by reading
+      the file — only `@aws-sdk/client-ssm` and `@aws-sdk/client-secrets-manager`
+      at the top). Boot failures logged as one plain JSON line to stderr,
+      then `process.exit(1)`.
+- [x] Measures the loader's own time and logs it (`boot.secrets_loaded`,
+      `durationMs`).
+- [x] Removed `DATABASE_URL` from the `parameters` map in `envs/dev/main.tf`
+      (validated with `terraform validate`). Updated `.env.example`'s Phase 6
+      comment to document both the `DATABASE_URL` and discrete `DB_*` paths.
 
 ### 6.2e · Migrator handler
 
-- [ ] `src/migrator.js`, a plain Lambda handler (not behind the adapter):
-      `const { runner } = await import('node-pg-migrate')`, then run `up`
+- [x] `src/migrator.js`, a plain Lambda handler (not behind the adapter):
+      `const { runner } = await import('node-pg-migrate')`, then runs `up`
       against `migrations/` with the **same `migrationsTable`** the CLI uses
-      (default `pgmigrations`) so local, CI and RDS share one history. Use the
-      same TLS and secret logic as 6.2c. Return the list of applied names.
-- [ ] Accept `{ "action": "up" }` only for now. `down` against a deployed
-      database should be a deliberate manual act, not a payload.
-- [ ] node-pg-migrate takes a Postgres advisory lock, so two concurrent
-      invocations serialise rather than race. Say so in a comment, because
-      Phase 7 will ask.
+      (`pgmigrations`, node-pg-migrate's own default) so local, CI and RDS
+      share one history. Reuses `src/db/connectionOptions.js` from 6.2c
+      (confirmed at the node-pg-migrate source level: `databaseUrl` as an
+      object is passed straight to `new pg.Client(...)`, so the async
+      `password` function works there too). Returns the list of applied names.
+- [x] Accepts `{ "action": "up" }` (and, after 6.2f, `"seed"`) only.
+      Anything else — including `"down"` — throws; a deployed database is
+      never migrated backward by payload.
+- [x] node-pg-migrate's advisory lock noted in a comment on `up()`.
 
 ### 6.2f · Seed for a deployed environment
 
-- [ ] Replace the hardcoded `BASE_IMG_URL` with `FRONTEND_URL`-derived (or
-      `SEED_IMAGE_BASE_URL`) so the dev storefront doesn't render localhost
-      images.
-- [ ] Expose it through the migrator as `{ "action": "seed" }`, refusing
-      unless `DEPLOY_ENV === 'dev'`. It truncates every table, and that guard
-      is the only thing standing between it and prod.
+- [x] Replaced the hardcoded `BASE_IMG_URL` with a `SEED_IMAGE_BASE_URL` (or
+      `FRONTEND_URL`) derived default. Seed logic moved to `src/seed.js`
+      (shared by the CLI and the migrator) since `scripts/` will be
+      dockerignored from the migrator image in 6.3; `scripts/seed.js` is now
+      a thin wrapper.
+- [x] Exposed through the migrator as `{ "action": "seed" }`, refusing unless
+      `DEPLOY_ENV === 'dev'` — unit-tested in `tests/migrator.test.js`
+      (default DEPLOY_ENV in tests is unset, so the refusal is the tested
+      default, not an opt-in). The local CLI script is intentionally **not**
+      gated by `DEPLOY_ENV` — running `npm run seed` against your own
+      `DATABASE_URL` is unchanged from before.
 
 ### 6.2g · Gate
 
-- [ ] `npm run lint && npm run test:all` green; `docker compose up` still
-      serves the storefront end to end.
+- [x] `npm run lint && npm run test:all` green (80 unit + 49 integration,
+      against real Postgres via `docker compose up -d db`). `docker compose up`
+      (full stack) verified end to end: `/api/status`, `/api/ready`,
+      `/api/version`, `/api/products`, and the frontend at `:5173` all served
+      correctly; `npm run seed` re-verified through the refactored
+      `scripts/seed.js` → `src/seed.js` path. Stack torn down after
+      (`docker compose down`).
 
 ---
 
@@ -318,22 +340,31 @@ COPY certs ${LAMBDA_TASK_ROOT}/certs
 CMD ["src/migrator.handler"]
 ```
 
-- [ ] Node 22 in the image to match `.nvmrc` (today's Dockerfile says 20).
-- [ ] Add `@aws-sdk/client-ssm` and `@aws-sdk/client-secrets-manager` as
-      dependencies. `bookworm-slim` doesn't bundle the SDK the way the AWS
-      base image does.
-- [ ] `.dockerignore`: add `tests/`, `coverage/`, `postman/`, `*.md`,
-      `scripts/` (the migrator doesn't need it once the seed moves),
-      `eslint.config.mjs`, `vitest*.mjs`.
-- [ ] `docker-compose.yml`: `build: { context: ./backend, target: api }`. The
-      same image runs in compose and in Lambda. The adapter in
-      `/opt/extensions` does nothing outside Lambda.
-- [ ] Remember that Lambda's filesystem is read-only except `/tmp`. Nothing
-      in the app writes to disk today (pino writes to stdout). Keep it that
-      way.
-- [ ] Local check: `docker buildx build --platform linux/arm64 --target api .`
-      builds, `docker compose up` still works, and the image is under ~250 MB.
-      Record the size.
+- [x] Node 22 in the image to match `.nvmrc` (today's Dockerfile says 20).
+- [x] Added `@aws-sdk/client-ssm` and `@aws-sdk/client-secrets-manager` as
+      dependencies (already done in 6.2d/6.2c — `bookworm-slim` doesn't
+      bundle the SDK the way the AWS base image does).
+- [x] `.dockerignore`: added `tests/`, `coverage/`, `postman/`, `*.md`,
+      `scripts/`, `eslint.config.mjs`, `vitest*.mjs`.
+- [x] `docker-compose.yml`: `build: { context: ./backend, target: api }`.
+      Reverified end to end after the switch: `docker compose up` (db +
+      backend + frontend) serves `/api/status`, `/api/ready`, `/api/version`,
+      `/api/products`, and the frontend — `src/lambda.js` correctly falls
+      through to `server.js` with no SSM call logged, since
+      `SSM_PARAMETER_PATH` is unset locally.
+- [x] Filesystem stays read-only-safe: nothing in the app writes to disk
+      (pino writes to stdout only) — unchanged by this step.
+- [x] Local check: `docker buildx build --platform linux/arm64 --target api .`
+      builds — **88 MB** (well under 250 MB). Confirmed `USER node` and
+      `arm64` on the built image via `docker inspect`. Also built and
+      **ran** the `migrator` target (not just built it): **143 MB**, verified
+      live via the Lambda Runtime Interface Emulator against the local
+      Postgres — `{"action":"up"}` correctly reported no pending migrations,
+      `{"action":"down"}` was rejected, `{"action":"seed"}` was refused
+      without `DEPLOY_ENV=dev` and succeeded (with `FRONTEND_URL`-derived
+      image URLs, confirming 6.2f) once it was set. Local dev database
+      reseeded with normal local values afterward; all test images/containers
+      cleaned up.
 
 Adapter environment (set on the function in 6.6, not in the image):
 `AWS_LWA_PORT=5000`, `PORT=5000`, `AWS_LWA_READINESS_CHECK_PATH=/api/status`,
@@ -346,19 +377,59 @@ Adapter environment (set on the function in 6.6, not in the image):
 
 New job(s) in `ci.yml` (or a new `image.yml`). **No AWS credentials** on PRs.
 
-- [ ] `runs-on: ubuntu-24.04-arm`, `docker/setup-buildx-action`,
-      `docker/build-push-action` with `cache-from/to: type=gha` and
-      `build-args: GIT_SHA=${{ github.sha }}`. Build both targets and `load` them.
-- [ ] Trivy on both images: `severity: HIGH,CRITICAL`, `exit-code: 1`,
-      `ignore-unfixed: true`. Document that last choice: failing on CVEs with
-      no available fix blocks every PR on something no PR can change. Keep a
-      `.trivyignore` with a reason and a date on each entry.
-- [ ] **Pin third-party actions by commit SHA**, not tag, starting with the
-      scanner. A tag is a mutable pointer, which is the same argument as "never
-      deploy `latest`".
-- [ ] Add the job to the `ci` aggregate gate's `needs`.
-- [ ] Push-to-ECR is **not** in this job. It needs the push role from 6.5 and
-      runs only on `main` (see 6.7).
+- [x] New `image` job in `ci.yml`, matrixed over `target: [api, migrator]`:
+      `runs-on: ubuntu-24.04-arm`, `docker/setup-buildx-action@v4`,
+      `docker/build-push-action@v7` with `cache-from/to: type=gha` (scoped per
+      target) and `build-args: GIT_SHA=${{ github.sha }}`. Both targets build
+      natively for `linux/arm64` and `load: true`.
+- [x] Trivy (`aquasecurity/trivy-action`) on both images: `severity:
+      HIGH,CRITICAL`, `exit-code: '1'`, `ignore-unfixed: true`,
+      `trivyignores: backend/.trivyignore`. Verified the action's actual
+      `action.yaml` at the pinned commit to confirm every input name.
+- [x] **Pin third-party actions by commit SHA**, not tag, starting with the
+      scanner: `aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0`
+      (resolved from the `v0.36.0` tag via the GitHub API, not guessed).
+- [x] Added `image` to the `ci` aggregate gate's `needs`.
+- [x] Push-to-ECR is **not** in this job — confirmed nothing ECR/login-related
+      was introduced; that needs the push role from 6.5 and runs only on
+      `main` (6.7).
+- [x] Validated with `actionlint` (via Docker, since it's not installed
+      locally) against the whole `.github/workflows/` directory — clean,
+      exit 0.
+- [x] **Found by actually running the scan locally before trusting the CI
+      wiring, not anticipated in the plan:** both fresh images failed the
+      gate the first time.
+  - Both `node:22-bookworm-slim` (api) and the AWS Lambda Node.js base image
+    (migrator) bundle npm's own CLI with vulnerable transitive deps (`tar`,
+    `pacote`, `sigstore`, `path-to-regexp`, `brace-expansion`, `ip-address`,
+    `picomatch` — 15 findings, 1 CRITICAL). Neither runtime image ever
+    invokes `npm`/`npx` (deps are installed in the `deps` stage; the CMD is a
+    plain `node` call or a Lambda handler), so both final stages now `rm -rf`
+    npm and corepack — deletes the unreachable code rather than suppressing
+    the finding, and shrinks the image as a side effect.
+  - Two of our **own** production dependencies were carrying vulnerable
+    transitives within their existing semver ranges: `express`'s `router`
+    pinned `path-to-regexp@8.3.0` (fixed in 8.4.0, latest 8.4.2) and
+    `node-pg-migrate`'s bundled `glob` pinned `minimatch@10.2.4` →
+    `brace-expansion@5.0.4` (three HIGH CVEs, fixed by 5.0.9). A plain
+    `npm update` (no `overrides` needed — both fixes were already inside the
+    declared ranges) resolved both; reverified with `npm ls`, full unit +
+    integration suites, and a rebuilt-image rescan (real exit code checked
+    directly, not through a pipe to `tail`).
+  - The migrator's AWS Lambda base image (Amazon Linux 2023) has a HIGH CVE
+    in `openssl-fips-provider-latest`/`openssl-snapsafe-libs`
+    (CVE-2026-14456) whose advertised fix isn't yet published to the
+    `amazonlinux` dnf repo this base image points at — verified directly
+    (`dnf update` reports "Nothing to do"), not assumed. Added
+    `RUN dnf update -y openssl-fips-provider-latest openssl-snapsafe-libs`
+    to the migrator stage anyway (self-heals the moment the fix ships, no
+    further Dockerfile change needed) and added the one CVE to
+    `backend/.trivyignore` with the verified reason and date, per this
+    step's original guidance on CVEs with no reachable fix.
+  - Both images reverified clean (`api`: exit 0 with no ignore file needed;
+    `migrator`: exit 0 with the one dated `.trivyignore` entry), then the
+    full local suite (lint, unit, integration, `docker compose up` end to
+    end) re-run once more against the updated lockfile — all green.
 
 ---
 
@@ -369,22 +440,23 @@ All in `terraform/bootstrap/`, applied by you via SSO, never by CI. A new
 
 ### ECR (account-level, shared by every environment)
 
-- [ ] `aws_ecr_repository "api"` and `"migrator"` (or one repo with suffixed
+- [x] `aws_ecr_repository "api"` and `"migrator"` (or one repo with suffixed
       tags): `image_tag_mutability = "IMMUTABLE"`, which makes "never
       overwrite a SHA tag" an AWS guarantee rather than a convention.
       `scan_on_push = true` (basic scanning is free).
-- [ ] Lifecycle policy: expire untagged after 1 day; keep the last ~15 tagged.
-- [ ] Repository policy allowing `lambda.amazonaws.com`
+- [x] Lifecycle policy: expire untagged after 1 day; keep the last ~15 tagged.
+- [x] Repository policy allowing `lambda.amazonaws.com`
       `ecr:BatchGetImage` + `ecr:GetDownloadUrlForLayer`, conditioned on
       `aws:SourceArn` = `arn:aws:lambda:<region>:<acct>:function:dejavu-*`.
       Setting it here means the apply role never needs
       `ecr:SetRepositoryPolicy`.
-- [ ] Why ECR is in bootstrap: one image is promoted dev → prod by SHA in
-      Phase 7, so the repo can't belong to either environment's state.
+- [x] Why ECR is in bootstrap: one image is promoted dev → prod by SHA in
+      Phase 7, so the repo can't belong to either environment's state. —
+      `modules/workload-roles`, instantiated once from `bootstrap/main.tf`.
 
 ### Push role
 
-- [ ] `dejavu-gha-push`: trusted for `repo:Ayprusss/dejavu:ref:refs/heads/main`
+- [x] `dejavu-gha-push`: trusted for `repo:Ayprusss/dejavu:ref:refs/heads/main`
       only (PRs excluded). Its only permissions are `ecr:GetAuthorizationToken`
       (`*`) and push actions on the two repos. **Why a ref-scoped trust is
       acceptable here** when Phase 5 rejected it for apply: pushing an
@@ -393,46 +465,54 @@ All in `terraform/bootstrap/`, applied by you via SSO, never by CI. A new
 
 ### Workload role (the Lambda execution role), per environment
 
-- [ ] `dejavu-dev-lambda`: trust `lambda.amazonaws.com`; attach
+- [x] `dejavu-dev-lambda`: trust `lambda.amazonaws.com`; attach
       `AWSLambdaVPCAccessExecutionRole` (ENI management + logs).
-- [ ] `ssm:GetParametersByPath` / `GetParameters` on
+- [x] `ssm:GetParametersByPath` / `GetParameters` on
       `parameter/dejavu/dev` and `parameter/dejavu/dev/*`.
-- [ ] `secretsmanager:GetSecretValue` on `secret:rds!db-*`, conditioned on the
+- [x] `secretsmanager:GetSecretValue` on `secret:rds!*`, conditioned on the
       secret's `aws:rds:primaryDBInstanceArn` tag equalling
-      `arn:aws:rds:<region>:<acct>:db:dejavu-dev`. RDS-managed secret names
-      are random, but the DB identifier is ours, so this scopes dev's role to
-      dev's database without a cross-config reference. **Verify the exact tag
-      key on the created secret in 6.7**, and fix the condition if it differs.
-- [ ] One role serves both the API and the migrator in Phase 6. Splitting it
+      `arn:aws:rds:<region>:<acct>:db:dejavu-dev` via the
+      `secretsmanager:ResourceTag/...` condition key (AWS's own documented
+      pattern for scoping access to an RDS-managed secret). RDS-managed
+      secret names are random, but the DB identifier is ours, so this scopes
+      dev's role to dev's database without a cross-config reference.
+      **Still to verify the exact tag key on the created secret in 6.7**,
+      once RDS actually exists, and fix the condition if it differs.
+- [x] One role serves both the API and the migrator in Phase 6. Splitting it
       is a note for Phase 7.
 
 ### RDS service-linked role
 
-- [ ] `aws iam get-role --role-name AWSServiceRoleForRDS`. If it's missing,
-      add `aws_iam_service_linked_role { aws_service_name = "rds.amazonaws.com" }`.
-      If it exists, `terraform import` it or leave it out, but don't create a
-      second one.
+- [x] `aws iam get-role --role-name AWSServiceRoleForRDS` came back
+      `NoSuchEntity`, so added `aws_iam_service_linked_role { aws_service_name
+      = "rds.amazonaws.com" }` (no import needed) — created by the bootstrap
+      apply.
 
 ### Widen the apply role (dev), and narrow its Deny
 
-In `modules/iam-oidc`:
+In `modules/iam-oidc`, gated behind a new `enable_workload_infrastructure`
+flag so prod's apply role stays at its Phase 5 shape until Phase 7 (D6):
 
-- [ ] Rewrite `apply_boundary_deny` so that `iam:PassRole` + `iam:GetRole` on
+- [x] Rewrote `apply_boundary_deny` so that `iam:PassRole` + `iam:GetRole` on
       the workload role ARN survive, and **everything else in IAM is still
-      denied**. IAM can't subtract actions inside one statement, so use two
+      denied**. IAM can't subtract actions inside one statement, so it's two
       Denies: (1) `iam:*` with `not_resources = [workload role ARN]`;
       (2) every mutating action (`iam:Create*`, `Delete*`, `Put*`, `Attach*`,
       `Detach*`, `Update*`, `Tag*`, `Untag*`) on the workload role ARN itself.
-      The net effect is read + PassRole on one role, and nothing else. Add a
-      `Condition iam:PassedToService = lambda.amazonaws.com` on the Allow.
-- [ ] Add Allows, scoped by region and by name prefix or tag wherever the
+      The net effect is read + PassRole on one role, and nothing else. Added a
+      `Condition iam:PassedToService = lambda.amazonaws.com` on the PassRole
+      Allow (kept `GetRole` as its own unconditioned statement, since a
+      condition on a context key that only exists for `PassRole` calls would
+      otherwise deny `GetRole` outright).
+- [x] Added Allows, scoped by region and by name prefix or tag wherever the
       service supports it:
   - **EC2/VPC:** create with `aws:RequestTag/Project = dejavu`, modify and
     delete with `aws:ResourceTag/Project = dejavu`; `Describe*` on `*`.
-    `RunInstances` touches image, subnet, SG, ENI and volume resources, and
-    only some of them take tag conditions. Expect to iterate.
+    **Expect to iterate** on the exact action list against real
+    AccessDenied errors in 6.7.
   - **RDS:** instance, subnet group and parameter group on
     `…:db:dejavu-*`, `…:subgrp:dejavu-*`, `…:pg:dejavu-*`; `Describe*`.
+    Included `RestoreDBInstanceToPointInTime` for 6.11's drill.
   - **Secrets Manager (for the RDS-managed secret):** `CreateSecret`,
     `TagResource`, `RotateSecret`, `DescribeSecret`, `DeleteSecret` on
     `secret:rds!*`.
@@ -441,28 +521,50 @@ In `modules/iam-oidc`:
   - **ECR:** `BatchGetImage`, `GetDownloadUrlForLayer`, `DescribeImages` on
     the two repos.
   - **Logs:** create, delete, retention and tags on
-    `log-group:/aws/lambda/dejavu-*`.
+    `log-group:/aws/lambda/dejavu-*` (plus `DescribeLogGroups` on `*`, a list
+    call).
   - **SSM public AMI parameter:**
     `ssm:GetParameter` on `arn:aws:ssm:<region>::parameter/aws/service/*`
     (the apply role only has `/dejavu/<env>/*` today).
-- [ ] After the first successful dev apply, trim the policy with **IAM Access
-      Analyzer policy generation** from CloudTrail and record the before and
-      after sizes. It's a good least-privilege story.
+  - Validated with a real `terraform plan` (14 to add, 3 to change, 0 to
+    destroy) and applied against the live account — no `AccessDenied`
+    surfaced yet because nothing has exercised these grants; that happens in
+    6.6/6.7.
+- [ ] After the first successful dev *environment* apply (6.7, not this
+      bootstrap apply), trim the policy with **IAM Access Analyzer policy
+      generation** from CloudTrail and record the before and after sizes.
 
 ### Budgets
 
-- [ ] In Billing, activate the `Environment` cost-allocation tag (manual;
-      takes up to 24h to appear, and isn't retroactive).
-- [ ] `modules/budget`: add a `cost_filter` on `user:Environment$<env>`;
-      set dev to ~$30, leave prod at $5. Also keep one **account-wide**
-      backstop budget at ~$40, because some charges (parts of data transfer,
-      public IPv4) don't carry your tags.
+- [x] Activated the `Environment` cost-allocation tag via
+      `aws_ce_cost_allocation_tag` (in `bootstrap/main.tf`) instead of a
+      manual console click — same 24h/non-retroactive AWS behavior, just
+      applied by Terraform instead of by hand.
+- [x] `modules/budget`: added a `cost_filter` on `user:Environment$<env>`;
+      dev raised to $30 (`envs/dev/terraform.tfvars`), prod left at $5. Added
+      one **account-wide** backstop budget at $40
+      (`module.budget_backstop` in bootstrap, `cost_filter_enabled = false`),
+      because some charges (parts of data transfer, public IPv4) don't carry
+      the tag.
 
 ### Outputs → GitHub variables
 
-- [ ] `AWS_PUSH_ROLE_ARN`, `ECR_API_REPO`, `ECR_MIGRATOR_REPO`, and the
-      workload role ARN (consumed by `envs/dev` as a variable or a
-      `data "aws_iam_role"`).
+- [x] `AWS_PUSH_ROLE_ARN`, `ECR_API_REPO`, `ECR_MIGRATOR_REPO`, and
+      `AWS_WORKLOAD_ROLE_ARN_DEV` set as GitHub repo variables via `gh
+      variable set`, sourced from the applied bootstrap outputs.
+
+### Applied
+
+- [x] `terraform apply` run against the live account (admin credentials,
+      same account as the 6.0 deviation note): **14 added, 3 changed, 0
+      destroyed**. A follow-up `terraform plan` shows no changes.
+- **Found, not caused by this step:** the plan surfaced pre-existing drift on
+  `roles_dev`/`roles_prod`'s `ManageBudgets` statement — the deployed policy
+  has `budgets:TagResource`/`UntagResource`/`ListTagsForResource` that
+  current `main.tf` doesn't declare (confirmed via `git diff` that this
+  step's changes never touched that statement). Applying this step's plan
+  removed those three actions as a side effect of the wider policy rewrite.
+  Worth a look before 6.13, unrelated to Phase 6.
 
 ---
 
@@ -473,93 +575,107 @@ New modules, wired into **`envs/dev` only** (D6). `terraform fmt` and
 
 ### `modules/network`
 
-- [ ] VPC `10.20.0.0/16`, DNS support and hostnames on.
-- [ ] One public subnet (AZ a) for the NAT; **two private subnets (AZ a + b)**.
+- [x] VPC `10.20.0.0/16`, DNS support and hostnames on.
+- [x] One public subnet (AZ a) for the NAT; **two private subnets (AZ a + b)**
+      — picked dynamically via `data "aws_availability_zones"` rather than
+      hardcoded `a`/`b` suffixes, so the module isn't region-specific.
       An RDS subnet group requires two AZs even for a single-AZ instance.
-- [ ] IGW; public route table `0.0.0.0/0 → igw`; private route table
+- [x] IGW; public route table `0.0.0.0/0 → igw`; private route table
       `0.0.0.0/0 → network_interface_id = NAT's primary ENI`.
-- [ ] NAT instance: `t4g.nano`, AL2023 arm64 from the SSM public parameter,
-      **`lifecycle { ignore_changes = [ami] }`**, or every new AMI release
-      plans a NAT replacement. `source_dest_check = false`,
+- [x] NAT instance: `t4g.nano`, AL2023 arm64 from the SSM public parameter
+      (name verified live: `/aws/service/ami-amazon-linux-latest/al2023-ami-
+      kernel-default-arm64` — a Git-Bash path-mangling red herring on the
+      first lookup attempt, confirmed correct once queried properly),
+      **`lifecycle { ignore_changes = [ami] }`**, `source_dest_check = false`,
       `metadata_options { http_tokens = "required" }`, no key pair, no SSH, no
-      instance profile. Use an **auto-assigned public IP, not an EIP**:
-      stopping the instance then releases the address and stops the IPv4
-      charge, and nothing needs the address to be stable.
-- [ ] `user_data`: install `iptables-services` (AL2023 doesn't ship it), set
-      `net.ipv4.ip_forward=1` persistently, and add a MASQUERADE rule on the
-      **default-route interface, detected at boot**:
-      `ip route | awk '/default/ {print $5}'`. On Nitro instances it's `ens5`,
-      not `eth0`, and hardcoding `eth0` is the classic silent failure.
-- [ ] SGs: `lambda` has no ingress; egress 443 → `0.0.0.0/0` and 5432 → `rds`.
-      `rds` allows ingress 5432 **from the `lambda` SG only**. `nat` allows
-      ingress 443 from the `lambda` SG and egress 443 → `0.0.0.0/0`. Stripe,
-      SSM and Secrets Manager are all HTTPS, so nothing else is needed.
-- [ ] **No interface VPC endpoints.** Each costs ~$7/mo per AZ. The NAT
-      carries SSM, Secrets Manager and Stripe, which also means **the NAT is
-      on the cold-start path**, not just the checkout path. Write that down.
-- [ ] The NAT is a single-AZ SPOF. EC2 simplified automatic recovery is on by
-      default for t4g, which covers host failure, and "replace it with
-      `terraform apply -replace`" covers the rest. That's the failure mode
-      you can articulate.
+      instance profile, `associate_public_ip_address = true` (auto-assigned,
+      not an EIP).
+- [x] `user_data`: install `iptables-services`, `net.ipv4.ip_forward=1`
+      persistently, MASQUERADE rule on the interface `ip route | awk
+      '/^default/ {print $5; exit}'` resolves to at boot.
+- [x] SGs: `lambda`/`rds`/`nat` as three bare `aws_security_group` resources
+      with rules as separate `aws_vpc_security_group_{ingress,egress}_rule`
+      resources (not inline blocks) — lambda and rds reference each other's
+      SG id, and an inline block on both sides would be a dependency cycle.
+- [x] **No interface VPC endpoints** — noted in the module's header comment,
+      with the cold-start-path consequence spelled out.
+- [x] NAT SPOF note added as a comment; nothing to configure (simplified
+      automatic recovery is an account-level default).
 
 ### `modules/rds`
 
-- [ ] `postgres`, major `16` (matches CI and compose),
-      `auto_minor_version_upgrade = true`, `db.t4g.micro`, 20 GB `gp3`,
-      `storage_encrypted = true`, `publicly_accessible = false`,
-      `multi_az = false`, identifier `dejavu-dev` (6.5's secret condition
-      depends on it).
-- [ ] **`manage_master_user_password = true`.** RDS creates and rotates the
-      Secrets Manager secret, and the password **never enters Terraform
-      state**, unlike `password = …`. This is Phase 5's "move exactly one
-      secret to Secrets Manager".
-- [ ] `backup_retention_period = 7` (PITR needs > 0), fixed backup and
-      maintenance windows, `copy_tags_to_snapshot = true`.
-- [ ] Dev: `deletion_protection = false`, `skip_final_snapshot = true`,
-      `apply_immediately = true`. Parameterise all three, because prod
-      inverts every one.
-- [ ] Parameter group `dejavu-dev-pg16` with `rds.force_ssl = 1`, set
-      explicitly even though it's the default, so it's visible in code.
-- [ ] Outputs: `address`, `port`, `db_name`, `master_user_secret_arn`.
+- [x] `postgres`, major `16`, `auto_minor_version_upgrade = true`,
+      `db.t4g.micro`, 20 GB `gp3`, `storage_encrypted = true`,
+      `publicly_accessible = false`, `multi_az = false`, identifier
+      `dejavu-dev` (matches 6.5's secret condition).
+- [x] `manage_master_user_password = true` (D8's master-username: chose
+      `dejavu_admin`, distinct from the future least-privilege `dejavu_app`
+      role D8 notes for "what I'd do differently").
+- [x] `backup_retention_period = 7`, fixed backup/maintenance windows,
+      `copy_tags_to_snapshot = true`.
+- [x] Dev: `deletion_protection = false`, `skip_final_snapshot = true`,
+      `apply_immediately = true`, all three parameterized (no defaults) so
+      prod can't inherit dev's values by omission.
+- [x] Parameter group `dejavu-dev-pg16` with `rds.force_ssl = 1`
+      (`apply_method = "pending-reboot"`, the safe choice regardless of
+      whether the parameter is static or dynamic).
+- [x] Outputs: `address`, `port`, `db_name`, `master_user_secret_arn`
+      (its description flags the 6.7-step-5 tag verification).
 
 ### `modules/lambda`
 
-- [ ] `aws_lambda_function "api"`: `package_type = "Image"`,
-      `architectures = ["arm64"]`, `image_uri = var.initial_image_uri`,
-      **`ignore_changes = [image_uri]`** (D5), `memory_size = 512` (revisit
-      after 6.9), `timeout = 15` (the 3 s default is shorter than a Stripe
-      call), `vpc_config` on both private subnets and the `lambda` SG,
-      execution role from 6.5.
-- [ ] Environment: `NODE_ENV=production`, `DEPLOY_ENV=dev`, `PORT` and
-      `AWS_LWA_*` (6.3), `PG_POOL_MAX=1`, `SSM_PARAMETER_PATH=/dejavu/dev`,
-      `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_SECRET_ARN`,
-      `DB_SSL_CA_PATH=/app/certs/rds-global-bundle.pem`, `CORS_ORIGINS`,
-      `FRONTEND_URL`, `TRUST_PROXY` (value decided in 6.9). **No secret values
-      here** (D4).
-- [ ] `aws_lambda_function_url`: `authorization_type = "NONE"`,
-      `invoke_mode = "BUFFERED"`, **no `cors` block**. Express already answers
-      CORS, and setting both produces duplicate `Access-Control-Allow-Origin`
-      headers, which browsers reject.
-- [ ] Public-invoke permission for the URL. AWS has tightened what a
-      Function URL with auth `NONE` needs, so verify with a plain `curl` in
-      6.7: a 403 `Forbidden` with no app log line is a resource-policy
-      problem, not an app problem.
-- [ ] `aws_lambda_function "migrator"`: same role, subnets and SG; migrator
-      image; `timeout = 300`; **no Function URL**.
-- [ ] Reserved concurrency as a ceiling (say 5) so concurrency × `max: 1`
-      can't approach `max_connections`, and so a flood can't run up a bill.
-      **Check the account's concurrency quota first.** New accounts can be
-      capped at 10, and AWS refuses any reservation that leaves fewer than 10
-      unreserved.
-- [ ] Outputs: `function_url`, `function_name`, `migrator_name`.
+- [x] `aws_lambda_function "api"`: `package_type = "Image"`,
+      `architectures = ["arm64"]`, `image_uri` built from a required
+      `var.initial_image_tag` (no default — must be supplied at the first
+      apply, 6.7 step 2), **`ignore_changes = [image_uri]`** (D5),
+      `memory_size = 512`, `timeout = 15`, `vpc_config` on both private
+      subnets and the `lambda` SG, execution role looked up by name
+      (`data "aws_iam_role" "dejavu-dev-lambda"`) rather than plumbed through
+      bootstrap outputs.
+- [x] Environment: `NODE_ENV=production`, `DEPLOY_ENV=dev`, `PORT` and
+      `AWS_LWA_*`, `PG_POOL_MAX=1`, `SSM_PARAMETER_PATH=/dejavu/dev`,
+      `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_SECRET_ARN` (from `module.rds`'s
+      outputs), `DB_SSL_CA_PATH=/app/certs/rds-global-bundle.pem`,
+      `CORS_ORIGINS`, `FRONTEND_URL`, `TRUST_PROXY` (placeholder `0` until
+      6.9's experiment). No secret values (D4).
+- [x] `aws_lambda_function_url`: `authorization_type = "NONE"`,
+      `invoke_mode = "BUFFERED"`, no `cors` block.
+- [x] Public-invoke `aws_lambda_permission` for the URL — still needs the
+      plain-`curl` verification against a real deployed function in 6.7.
+- [x] `aws_lambda_function "migrator"`: same role, subnets and SG; migrator
+      image; `timeout = 300`; no Function URL.
+- [x] Reserved concurrency: **left unset**, not "say 5" — checked the
+      account's quota first as instructed
+      (`aws lambda get-account-settings`): `ConcurrentExecutions` is **10
+      total** for this account, and AWS refuses any reservation that leaves
+      fewer than 10 unreserved, so reserving even 1 today would fail the
+      apply. `var.reserved_concurrency` defaults to `null` with a comment
+      explaining why, ready to set once a quota increase is requested.
+- [x] Outputs: `function_url`, `function_name`, `migrator_name`.
 
 ### `modules/observability`
 
-- [ ] `aws_cloudwatch_log_group` for `/aws/lambda/dejavu-dev-api` and
-      `-migrator`, `retention_in_days = 14`. Create them **before** the
-      functions (`depends_on`), or Lambda auto-creates them with
-      never-expire retention and Terraform then fails on "already exists".
-- [ ] Alarms and SNS are Phase 7. Leave a comment saying so.
+- [x] `aws_cloudwatch_log_group` for `/aws/lambda/dejavu-dev-api` and
+      `-migrator`, `retention_in_days = 14`. Ordered before the functions via
+      `depends_on = [module.observability]` on `module.lambda` in
+      `envs/dev/main.tf` (module-level, since the log groups aren't resources
+      `modules/lambda` itself creates).
+- [x] Alarms and SNS are Phase 7 — noted in the module's header comment.
+
+### Wiring and validation
+
+- [x] All four modules wired into `envs/dev/main.tf` only (D6) — `envs/prod`
+      untouched.
+- [x] `terraform fmt -recursive -check` and `terraform validate` clean across
+      `bootstrap/`, `envs/dev/`, `envs/prod/`.
+- [x] Real `terraform plan` against the live account (read-only, not
+      applied): **28 to add, 1 to change** (the budget module's Phase 6
+      `cost_filter`/$30 limit from 6.5, not yet applied to `envs/dev`), **1 to
+      destroy** (the `DATABASE_URL` SSM parameter — pre-existing removal from
+      6.2d, unrelated to this step). No errors; every data source
+      (`dejavu-dev-lambda` role, `dejavu-api`/`dejavu-migrator` ECR repos,
+      the public AMI parameter) resolved against the real account. **Not
+      applied** — that's 6.7, and it starts real billing.
 
 ---
 

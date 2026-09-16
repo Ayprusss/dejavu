@@ -311,7 +311,7 @@ Two things fixed it. A barrier in the Stripe stub holds every delivery until all
 
 ---
 
-# Phase 5 — Terraform + GitHub OIDC + Secrets Manager [~]
+# Phase 5 — Terraform + GitHub OIDC + Secrets Manager [x]
 
 *Roadmap #3. Highest-signal item on the list.*
 

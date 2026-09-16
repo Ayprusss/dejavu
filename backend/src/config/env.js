@@ -10,12 +10,7 @@
  * file to find — the variables come from the environment itself.
  */
 
-const REQUIRED = [
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'STRIPE_SECRET_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-];
+const REQUIRED = ['JWT_SECRET', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET'];
 
 const MIN_JWT_SECRET_LENGTH = 32;
 
@@ -24,6 +19,34 @@ const problems = [];
 const missing = REQUIRED.filter((name) => !process.env[name]);
 if (missing.length > 0) {
   problems.push(`Missing required environment variables: ${missing.join(', ')}`);
+}
+
+/**
+ * The database can be reached either way: a single `DATABASE_URL` (local,
+ * CI, tests) or three discrete Lambda-friendly parts, because RDS is private
+ * and the password comes from Secrets Manager rather than a connection
+ * string. A *partial* discrete set (say, `DB_HOST` and `DB_NAME` but a
+ * forgotten `DB_SECRET_ARN`) is worse than neither being set — pool.js would
+ * silently build a connection missing a piece — so that fails boot too.
+ */
+const DB_DISCRETE_VARS = ['DB_HOST', 'DB_NAME', 'DB_SECRET_ARN'];
+const presentDbVars = DB_DISCRETE_VARS.filter((name) => process.env[name]);
+const hasDiscreteDbConfig = presentDbVars.length === DB_DISCRETE_VARS.length;
+
+if (presentDbVars.length > 0 && !hasDiscreteDbConfig) {
+  const missingDbVars = DB_DISCRETE_VARS.filter((name) => !process.env[name]);
+  problems.push(
+    `Incomplete discrete database config: set all of ${DB_DISCRETE_VARS.join(', ')} (missing: ${missingDbVars.join(', ')})`,
+  );
+} else if (presentDbVars.length === 0 && !process.env.DATABASE_URL) {
+  problems.push(
+    `Database configuration missing: set DATABASE_URL, or all of ${DB_DISCRETE_VARS.join(', ')}`,
+  );
+}
+
+const dbPort = Number(process.env.DB_PORT ?? 5432);
+if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
+  problems.push(`DB_PORT must be an integer between 1 and 65535 (got "${process.env.DB_PORT}")`);
 }
 
 // A short secret is as good as no secret: it signs admin tokens.
@@ -74,6 +97,12 @@ module.exports = Object.freeze({
   PORT: port,
 
   DATABASE_URL: process.env.DATABASE_URL,
+  DB_HOST: process.env.DB_HOST,
+  DB_PORT: dbPort,
+  DB_NAME: process.env.DB_NAME,
+  DB_USER: process.env.DB_USER,
+  DB_SECRET_ARN: process.env.DB_SECRET_ARN,
+  DB_SSL_CA_PATH: process.env.DB_SSL_CA_PATH,
   PG_POOL_MAX: poolMax,
 
   LOG_LEVEL:
@@ -92,6 +121,18 @@ module.exports = Object.freeze({
 
   // Used to build Stripe's success/cancel redirect URLs.
   FRONTEND_URL: process.env.FRONTEND_URL || 'https://dejavustudio.xyz',
+
+  // Set by the CI image build (--build-arg GIT_SHA=$(git rev-parse HEAD)) and
+  // surfaced at GET /api/version, so a smoke test can confirm the SHA it just
+  // deployed is the one actually live.
+  GIT_SHA: process.env.GIT_SHA || 'unknown',
+
+  // Set by Terraform on the migrator Lambda only ('dev' or 'prod'). Guards
+  // migrator.js's {"action":"seed"} — a truncate-everything operation that
+  // must never run against prod. Unset locally; the CLI seed script
+  // (npm run seed) isn't gated by this, since running it is already a
+  // deliberate act against whatever DATABASE_URL you pointed it at.
+  DEPLOY_ENV: process.env.DEPLOY_ENV,
 
   CORS_ORIGINS: parseList(process.env.CORS_ORIGINS, [
     'https://dejavustudio.xyz',

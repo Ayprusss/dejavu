@@ -40,7 +40,10 @@ app.use(
     // The health checks are polled continuously by the platform and would
     // otherwise be the overwhelming majority of the log volume.
     autoLogging: {
-      ignore: (req) => req.url === '/api/status' || req.url === '/api/ready',
+      ignore: (req) =>
+        req.url === '/api/status' ||
+        req.url === '/api/ready' ||
+        req.url === '/api/version',
     },
     customLogLevel: (_req, res, err) => {
       if (err || res.statusCode >= 500) return 'error';
@@ -100,6 +103,14 @@ app.get('/api/ready', async (_req, res) => {
     logger.error({ event: 'readiness.failed', err: error }, 'Readiness check failed');
     res.status(503).json({ status: 'unavailable' });
   }
+});
+
+/**
+ * Which image is actually running. Phase 7's smoke test polls this after a
+ * deploy and compares it against the SHA it just pushed.
+ */
+app.get('/api/version', (_req, res) => {
+  res.status(200).json({ sha: env.GIT_SHA });
 });
 
 app.get('/', (req, res) => {

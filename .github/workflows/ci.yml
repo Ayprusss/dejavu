@@ -284,6 +284,54 @@ jobs:
       - name: Run integration tests
         run: npm run test:integration
 
+  image:
+    name: image (${{ matrix.target }})
+    # Native arm64 — D2's whole point is avoiding QEMU emulation, and this
+    # runner is free for public repos.
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [api, migrator]
+    # No AWS credentials here on purpose: this job proves the image builds
+    # and passes the CVE gate on every PR, including from a fork. Pushing the
+    # result to ECR needs the push role from 6.5 and runs only on `main`,
+    # once an image already exists there for a Lambda to reference (6.7).
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build ${{ matrix.target }}
+        uses: docker/build-push-action@v7
+        with:
+          context: backend
+          target: ${{ matrix.target }}
+          platforms: linux/arm64
+          load: true
+          tags: dejavu-${{ matrix.target }}:ci
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+
+      # Pinned by commit SHA, not tag — a tag is a mutable pointer, the same
+      # argument as never deploying `:latest`. This is the first action in
+      # the repo pinned this way; the rest of ci.yml still uses tags.
+      - name: Scan ${{ matrix.target }} for HIGH/CRITICAL CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: dejavu-${{ matrix.target }}:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          # A CVE with no available fix would block every PR on something no
+          # PR can change, which trains people to ignore the gate instead of
+          # trusting it. backend/.trivyignore is the explicit, reviewed
+          # exception list for the rest — each entry carries a reason and a
+          # date.
+          ignore-unfixed: true
+          trivyignores: backend/.trivyignore
+
   # Aggregate gate: this is the single check to require in branch protection,
   # so adding a job above does not mean editing the protection rule.
   ci:
@@ -298,6 +346,7 @@ jobs:
         boot-check,
         migrations,
         test-integration,
+        image,
       ]
     if: always()
     steps:
@@ -310,4 +359,5 @@ jobs:
           echo "boot-check:     ${{ needs.boot-check.result }}"
           echo "migrations:     ${{ needs.migrations.result }}"
           echo "integration:    ${{ needs.test-integration.result }}"
+          echo "image:          ${{ needs.image.result }}"
           [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false" ]
