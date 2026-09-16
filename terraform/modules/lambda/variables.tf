@@ -87,11 +87,18 @@ variable "frontend_url" {
 
 variable "trust_proxy" {
   description = <<-DESC
-    Number of proxies in front of Express (Function URL -> Lambda Web Adapter
-    -> Express). Placeholder until 6.9 determines the real value by
-    experiment; 0 (no proxy trusted) is the safe default everywhere else in
-    this app, so it stays the default here too rather than guessing a number
-    that would silently mis-key the rate limiter.
+    Confirmed 0 by real experiment in 6.9, not a placeholder: this Function
+    URL has no CloudFront or ALB in front of it, and the Lambda Web Adapter
+    does not sanitize X-Forwarded-For - a client-supplied header reaches
+    Express completely unmodified (verified by sending one and reading it
+    back). Any nonzero value here would make app.set('trust proxy', N) trust
+    that header, letting a single caller mint a fresh rate-limit bucket per
+    request for the price of one header - strictly worse than trusting
+    nothing. The real client IP does reach the app, just not through
+    Express's trust-proxy mechanism: src/lib/clientIp.js reads it from
+    x-amzn-request-context instead, which the adapter provides directly from
+    the Lambda event and which a client cannot override (also verified by
+    trying).
   DESC
   type        = number
   default     = 0

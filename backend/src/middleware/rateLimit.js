@@ -9,12 +9,24 @@
  */
 
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const logger = require('../lib/logger');
+const { getTrustedClientIp } = require('../lib/clientIp');
 
 const onLimit = (event) => (req, res, _next, options) => {
-  logger.warn({ event, ip: req.ip, path: req.originalUrl }, 'Rate limit exceeded');
+  logger.warn(
+    { event, ip: getTrustedClientIp(req), path: req.originalUrl },
+    'Rate limit exceeded',
+  );
   res.status(options.statusCode).json({ message: options.message });
 };
+
+// A raw IPv6 address is not a stable bucket key on its own - a client with
+// a /56 (or wider) allocation can walk through billions of addresses inside
+// it, one per request, and each would count as a fresh caller. Collapsing
+// to the containing /56 (express-rate-limit's own default) is what makes
+// the IPv6 case as hard to evade as the IPv4 case.
+const rateLimitKeyGenerator = (req) => ipKeyGenerator(getTrustedClientIp(req));
 
 /**
  * Login. There is no lockout and no attempt counter on the account itself, so
@@ -31,6 +43,7 @@ const loginLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: 'Too many login attempts. Try again later.',
+  keyGenerator: rateLimitKeyGenerator,
   handler: onLimit('ratelimit.login'),
 });
 
@@ -44,6 +57,7 @@ const checkoutLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: 'Too many checkout attempts. Try again later.',
+  keyGenerator: rateLimitKeyGenerator,
   handler: onLimit('ratelimit.checkout'),
 });
 
