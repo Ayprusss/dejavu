@@ -242,13 +242,19 @@ data "aws_iam_policy_document" "apply" {
   }
 
   # Budgets is a global service whose resource-level permissions are limited;
-  # this is scoped by action and by account.
+  # this is scoped by action and by account. The three Tag actions are not
+  # optional extras: aws_budgets_budget picks up the provider's default_tags,
+  # and the AWS provider calls ListTagsForResource/TagResource to reconcile
+  # them - confirmed by a real 6.7 AccessDenied when they were missing.
   statement {
     sid    = "ManageBudgets"
     effect = "Allow"
     actions = [
       "budgets:ViewBudget",
       "budgets:ModifyBudget",
+      "budgets:TagResource",
+      "budgets:UntagResource",
+      "budgets:ListTagsForResource",
     ]
     resources = ["arn:aws:budgets::${var.account_id}:budget/*"]
   }

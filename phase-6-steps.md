@@ -558,13 +558,17 @@ flag so prod's apply role stays at its Phase 5 shape until Phase 7 (D6):
 - [x] `terraform apply` run against the live account (admin credentials,
       same account as the 6.0 deviation note): **14 added, 3 changed, 0
       destroyed**. A follow-up `terraform plan` shows no changes.
-- **Found, not caused by this step:** the plan surfaced pre-existing drift on
-  `roles_dev`/`roles_prod`'s `ManageBudgets` statement — the deployed policy
-  has `budgets:TagResource`/`UntagResource`/`ListTagsForResource` that
-  current `main.tf` doesn't declare (confirmed via `git diff` that this
-  step's changes never touched that statement). Applying this step's plan
-  removed those three actions as a side effect of the wider policy rewrite.
-  Worth a look before 6.13, unrelated to Phase 6.
+- **Correction, found in 6.7:** at the time, this plan's removal of
+  `budgets:TagResource`/`UntagResource`/`ListTagsForResource` from
+  `ManageBudgets` (present in deployed state, absent from `main.tf`, `git
+  diff` showed this step never touched that statement) was logged above as
+  unrelated pre-existing drift, safe to leave for later. It was not drift -
+  it was load-bearing: `aws_budgets_budget` picks up the provider's
+  `default_tags`, and the AWS provider needs exactly those three actions to
+  reconcile them. Removing them broke the real dev apply with `AccessDenied:
+  ... budgets:ListTagsForResource ...` in 6.7 step 3. Fixed there by adding
+  the three actions back to `modules/iam-oidc`'s `ManageBudgets` statement,
+  with a comment on the statement explaining why they're required.
 
 ---
 
