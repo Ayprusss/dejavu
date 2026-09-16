@@ -31,7 +31,7 @@ restored from PITR once and the steps are written down.
 | 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [x] |
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [x] |
 | 6.10 | Secret rotation actually exercised | | [x] |
-| 6.11 | PITR restore drill, written down | | [ ] |
+| 6.11 | PITR restore drill, written down | | [x] |
 | 6.12 | Destroy → re-apply drill, cost check | | [ ] |
 | 6.13 | Docs, execution plan, merge | | [ ] |
 
@@ -1034,20 +1034,54 @@ cached.
 Write this into `terraform/README.md` (or `docs/runbooks/`) **as you do it**,
 with the real timestamps and gotchas.
 
-- [ ] Insert a marker row through the app (e.g. create a product via admin).
+Done 2026-09-16. The full runbook is in `terraform/README.md` → "Restoring
+the database to a point in time"; this section keeps only the checkboxes.
+
+- [x] Insert a marker row through the app (e.g. create a product via admin).
       Note the UTC time. Wait ~10 minutes (PITR lags the latest restorable
-      time by ~5 min). Delete the marker.
-- [ ] `aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier dejavu-dev --target-db-instance-identifier dejavu-dev-restore --restore-time <before-delete> --db-subnet-group-name … --vpc-security-group-ids <rds-sg> --db-parameter-group-name dejavu-dev-pg16 --no-publicly-accessible`.
-      **Pass the subnet group and SG explicitly.** Omitting them restores into
-      defaults, which is the single most common restore mistake.
-- [ ] Point the API at the restored endpoint (`DB_HOST` override), confirm
-      the marker row is back, then point it home.
-- [ ] Record: time to available; how credentials worked on the restored
-      instance (whether it's tied to the source's managed secret or needed its
-      own via `--manage-master-user-password`, and what you had to do); and
-      that the restore is **outside Terraform state**.
-- [ ] Delete the restored instance (it bills while it exists). Record the
-      total cost of the drill.
+      time by ~5 min). Delete the marker. — Marker product created via
+      `POST /api/admin/products` at **20:48:33Z**. There is no delete
+      endpoint, so the "bad write" was `PUT /api/admin/products/:id`
+      overwriting its name at **20:52:02Z**, the same test. The lag between
+      the wall clock and `LatestRestorableTime` was ~6-7 min, not ~5.
+- [x] `aws rds restore-db-instance-to-point-in-time …` to **20:50:00Z**,
+      started 20:54:50Z, with subnet group `dejavu-dev`, SG `dejavu-dev-rds`,
+      parameter group `dejavu-dev-pg16`, `db.t4g.micro`, private, and tags
+      passed explicitly. No free-tier refusal on a second instance
+      (unlike 6.7's `backup_retention_period = 7`).
+- [x] Point the API at the restored endpoint (`DB_HOST` override), confirm
+      the marker row is back, then point it home. — Ran by hand (the agent's
+      classifier blocks live function-config changes) via a script that swaps
+      **only** `DB_HOST` and restores the saved map on exit. Restored: marker
+      back with its original name and `updatedAt`, `/api/ready` 200. Home:
+      overwritten name again. Live environment then diffed against the saved
+      copy: identical, 15 vars. Two cold starts (one per config change), no
+      errors.
+- [x] Record: time to available; how credentials worked on the restored
+      instance; and that the restore is **outside Terraform state**.
+    - **Time to available: 37 min 43 s**, of which `backing-up` was 22 min
+      (the copy inherits 1-day retention and takes a fresh backup first).
+    - **Credentials:** the copy got **no managed secret**
+      (`MasterUserSecret: null`) and needed nothing. The password is in the
+      data, so the copy carries whatever was current at 20:50:00Z, which the
+      source secret still held (last rotation 20:42:52Z, from 6.10). Nothing
+      done. A restore to before a later rotation would not be that lucky;
+      the README spells out both ways out, including the role-policy catch
+      with `--manage-master-user-password`. Not drilled.
+    - **Outside Terraform state:** confirmed by construction. Created by the
+      CLI, never imported, invisible to `plan`, and `destroy` wouldn't
+      remove it.
+- [x] Delete the restored instance (it bills while it exists). Record the
+      total cost of the drill. — `delete-db-instance --skip-final-snapshot
+      --delete-automated-backups` at 23:13:19Z; instance gone 23:14:59Z, its
+      automated snapshot cleared 23:15:50Z. Only `dejavu-dev` and its own
+      automated backups remain. It lived ~2.4 h (the wait
+      for a human to run the swap was most of it). **~$0.05** at on-demand
+      rates; 6.12's Cost Explorer check confirms the real figure.
+- The marker product is still in dev's `Product` table (no delete endpoint;
+  it shows up on `/pages/shop` as a $1 item with no images). The next
+  `{"action":"seed"}` truncates it, and 6.12's destroy → re-apply → seed
+  loop does that anyway.
 
 ---
 
@@ -1106,7 +1140,7 @@ interview". Prove that loop works before relying on it.
 - [ ] Images are tagged by git SHA in an immutable repo; `/api/version`
       returns the SHA that's live.
 - [ ] Trivy gates every PR on HIGH/CRITICAL.
-- [ ] PITR restore performed once, steps written down (6.11).
+- [x] PITR restore performed once, steps written down (6.11).
 - [ ] Cold start and login latency measured and quoted (6.9).
 - [ ] `destroy` → `apply` round trip done and timed (6.12).
 

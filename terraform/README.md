@@ -143,6 +143,123 @@ the actual Lambda event and overwrites regardless of what a caller sends
 (`backend/src/lib/clientIp.js` reads it directly; both rate limiters key on
 it instead of `req.ip`).
 
+## Database secret rotation (exercised in 6.10)
+
+RDS rotates the master password itself, every 7 days, in the
+`rds!db-…` secret. The app never needs a redeploy for it:
+`src/db/credentials.js` caches the password for 5 minutes, and `pool.js`
+calls `invalidate()` on a `28P01`. Measured against two real `rotate-secret`
+runs:
+
+- A connection that is **already open** survives the rotation. 1,078
+  requests over ~12 minutes of continuous traffic, zero errors.
+- A **new** connection opened while the old password is still cached fails
+  once (`/api/ready` → 503, `28P01`) and the very next request recovers.
+  That happens to a warm environment idle for >30 s (the pool's idle timeout
+  fires on thaw) whose password was fetched <5 min before the rotation.
+- A rotation takes ~70 s. When it finishes, `AWSPENDING` stays attached to
+  the same version as `AWSCURRENT`. That is normal, not a stuck rotation.
+
+## Restoring the database to a point in time (drilled in 6.11)
+
+Performed once against dev on 2026-09-16. The timestamps below are the real
+ones.
+
+### Runbook
+
+1. **Pick the restore time** in UTC: after the last good write, before the
+   bad one. It has to be ≤ `LatestRestorableTime`, which ran about **6-7
+   minutes** behind the wall clock:
+   ```bash
+   aws rds describe-db-instances --db-instance-identifier dejavu-dev \
+     --query 'DBInstances[0].LatestRestorableTime'
+   ```
+2. **Restore into a new instance.** PITR never rewinds the source in place.
+   Pass the network explicitly: leave out the subnet group or security group
+   and the copy lands in the default VPC/SG, where the Lambda can't reach it.
+   Leave out the parameter group and you lose `rds.force_ssl`.
+   ```bash
+   aws rds restore-db-instance-to-point-in-time \
+     --source-db-instance-identifier dejavu-dev \
+     --target-db-instance-identifier dejavu-dev-restore \
+     --restore-time 2026-09-16T20:50:00Z \
+     --db-subnet-group-name dejavu-dev \
+     --vpc-security-group-ids <rds SG id, `dejavu-dev-rds`> \
+     --db-parameter-group-name dejavu-dev-pg16 \
+     --db-instance-class db.t4g.micro \
+     --no-publicly-accessible --no-multi-az --no-deletion-protection \
+     --tags Key=Project,Value=dejavu Key=Environment,Value=dev Key=Purpose,Value=pitr-drill
+   ```
+   The tags are not inherited unless you ask; `Environment` is what the dev
+   budget's cost filter matches on.
+3. **Wait for `available`.** In the drill that took **37 min 43 s**: `creating`
+   13 min → `backing-up` **22 min** → `modifying` 1 min → `available`. The
+   long backup is because the restore inherits the source's backup retention
+   (1 day), and RDS takes a fresh backup of the new instance before calling it
+   available. Budget ~40 minutes, not ~10.
+4. **Point the API at it.** Change `DB_HOST` only. `update-function-configuration`
+   replaces the **whole** environment map, so save the current map first and
+   send it back with one key changed:
+   ```bash
+   aws lambda get-function-configuration --function-name dejavu-dev-api \
+     --query Environment > env-original.json
+   # write env-swapped.json = same map, DB_HOST=<restored endpoint>
+   aws lambda update-function-configuration --function-name dejavu-dev-api \
+     --environment file://env-swapped.json
+   aws lambda wait function-updated-v2 --function-name dejavu-dev-api
+   ```
+   Each config change is a cold start (~0.8-1.0 s `Init Duration` in the
+   drill).
+5. **Verify the data** through the app (no `psql`, since RDS is private), then
+   **point it home** with `--environment file://env-original.json`, and diff
+   the live map against the saved one.
+6. **Delete the copy** (it bills while it exists):
+   ```bash
+   aws rds delete-db-instance --db-instance-identifier dejavu-dev-restore \
+     --skip-final-snapshot --delete-automated-backups
+   ```
+   The instance disappeared ~1.5 min after the call, but its automated
+   snapshot (`rds:dejavu-dev-restore-…`, from the `backing-up` phase) was
+   still listed for another ~50 s before `--delete-automated-backups` cleared
+   it. Re-check `describe-db-snapshots` a minute later before assuming a
+   leftover.
+
+For a real recovery rather than a drill, the choice at step 5 is between
+pointing the app at the restored instance for good (then bring it under
+Terraform with `terraform import`, or rename instances so the `dejavu-dev`
+identifier refers to it) and copying the lost rows back into the source.
+Neither was drilled.
+
+### What the drill showed
+
+- **Marker:** product created via the admin API at 20:48:33Z, name
+  overwritten at 20:52:02Z (no delete endpoint exists; an overwrite is the
+  same test). Restored to 20:50:00Z. Through the restored instance the API
+  returned the original name and the original `updatedAt`; pointed home, it
+  returned the overwritten one again.
+- **Credentials:** the restored instance has **no managed secret**
+  (`MasterUserSecret: null`). It didn't need one: the password lives in the
+  database's own data, so the copy has whichever password was current at the
+  restore time, and the source's `DB_SECRET_ARN` still held that one (the
+  last rotation before the restore point was 20:42:52Z, and none came after
+  it). `/api/ready` returned 200 with no credential change at all.
+  **Not drilled, but follows from that:** restore to a time *before* a later
+  rotation, and the source secret's `AWSCURRENT` no longer matches. Then
+  either read `AWSPREVIOUS` (it only goes one rotation back), or run
+  `modify-db-instance --manage-master-user-password` on the copy. That new
+  secret's `aws:rds:primaryDBInstanceArn` tag names the *restored* instance,
+  so `dejavu-dev-lambda`'s policy (scoped to `db:dejavu-dev`) can't read it
+  until the policy is widened in `bootstrap/`.
+- **Outside Terraform state.** Terraform never learns the restored instance
+  exists: `plan` doesn't show it, and `destroy` would not remove it. Tag it,
+  and delete it by hand.
+- **Cost:** the copy existed from 20:54:50Z to ~23:15Z, about 2.4 h of
+  `db.t4g.micro` plus 20 GB gp3. At on-demand rates that is **~$0.05**. Checked
+  against Cost Explorer in 6.12.
+- **Permissions note:** the swap in step 4 was run by a human. The agent's
+  auto-mode classifier blocks changes to the live function's configuration,
+  as it should.
+
 ## The dependency nobody writes down
 
 Environment protection rules are **free on public repositories** and a **paid
