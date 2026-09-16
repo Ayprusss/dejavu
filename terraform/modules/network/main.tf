@@ -215,6 +215,17 @@ resource "aws_instance" "nat" {
     # interface instead of hardcoding it.
     IFACE=$(ip route | awk '/^default/ {print $5; exit}')
     iptables -t nat -A POSTROUTING -o "$IFACE" -j MASQUERADE
+
+    # iptables-services ships its own default /etc/sysconfig/iptables, loaded
+    # by `systemctl enable --now iptables` above, whose filter table ends
+    # with `-A FORWARD -j REJECT`. Enabling ip_forward and adding a NAT rule
+    # is not enough on its own - that reject line still catches every
+    # forwarded packet before it ever reaches POSTROUTING/MASQUERADE. Found
+    # by real EHOSTUNREACH/ETIMEDOUT errors invoking a Lambda through this
+    # NAT: the fix needs both an explicit allow for traffic from our VPC and
+    # a stateful allow for the replies, inserted ahead of that reject.
+    iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+    iptables -I FORWARD -s ${var.vpc_cidr} -j ACCEPT
     iptables-save > /etc/sysconfig/iptables
   EOF
 

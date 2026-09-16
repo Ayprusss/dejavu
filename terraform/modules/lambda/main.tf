@@ -23,7 +23,14 @@ locals {
     DB_PORT            = tostring(var.db_port)
     DB_NAME            = var.db_name
     DB_SECRET_ARN      = var.db_secret_arn
-    DB_SSL_CA_PATH     = "/app/certs/rds-global-bundle.pem"
+
+    # No DB_SSL_CA_PATH: connectionOptions.js's own fallback
+    # (`${__dirname}/../../certs/rds-global-bundle.pem`) resolves correctly
+    # for both images without it, and a single hardcoded path here can't -
+    # api's WORKDIR is /app, but the migrator's AWS base image uses
+    # /var/task (LAMBDA_TASK_ROOT). Found via a real ENOENT invoking the
+    # migrator: it was opening /app/certs/... on an image that only has
+    # /var/task/certs/....
   }
 }
 
