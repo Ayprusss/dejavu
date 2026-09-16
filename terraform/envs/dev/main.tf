@@ -110,6 +110,16 @@ module "lambda" {
   db_name       = module.rds.db_name
   db_secret_arn = module.rds.master_user_secret_arn
 
+  # Dev's own frontend for the 6.9 CORS check, not the module's default
+  # (dejavustudio.xyz), which is the real production domain. dejavu-ten was
+  # a stale project (404s) - dejavu-seven is this account's stable
+  # production alias (`vercel --prod`), so it survives future redeploys.
+  cors_origins = [
+    "https://dejavu-seven.vercel.app",
+    "http://localhost:5173",
+  ]
+  frontend_url = "https://dejavu-seven.vercel.app"
+
   # Defaults to "bootstrap" - 6.7 step 2 pushes both images tagged
   # :bootstrap by hand before the first apply, and every apply after that
   # ignores this argument (D5), so CI's automated apply never needs it.

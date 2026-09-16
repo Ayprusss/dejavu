@@ -136,7 +136,7 @@ module.exports = Object.freeze({
 
   CORS_ORIGINS: parseList(process.env.CORS_ORIGINS, [
     'https://dejavustudio.xyz',
-    'https://dejavu-ten.vercel.app',
+    'https://dejavu-seven.vercel.app',
     'http://localhost:5173', // Vite dev server
   ]),
 });

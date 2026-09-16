@@ -76,7 +76,6 @@ variable "cors_origins" {
   type = list(string)
   default = [
     "https://dejavustudio.xyz",
-    "https://dejavu-ten.vercel.app",
   ]
 }
 
