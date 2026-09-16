@@ -850,33 +850,81 @@ settled before anything else is built on top.
 
 ## 6.9 — Runtime checks (measure, then write down the numbers)
 
-- [ ] **`TRUST_PROXY`, found by experiment:** temporarily log `req.ip`, the
-      raw `X-Forwarded-For` and the socket address. Send
-      `curl -H 'X-Forwarded-For: 1.2.3.4' <url>/api/status`. Choose the value
-      for which `req.ip` is your real address and **not** `1.2.3.4`. Then
-      prove the login limiter trips for you and doesn't trip for a second IP
-      (phone hotspot). Remove the temporary logging.
-- [ ] Record the honest caveat: the limiter is in-memory **per execution
-      environment**, so on Lambda its budget multiplies with concurrency and
-      resets on recycle. Reserved concurrency bounds it. The real fix (shared
-      store, or WAF, which needs CloudFront in front of a Function URL) is
-      deliberately not taken.
-- [ ] **Cold start:** from the `REPORT` log line, record `Init Duration` at
-      p50 over ~10 forced cold starts, with `boot.secrets_loaded` split out.
-      Quote this number in the README. No provisioned concurrency.
-- [ ] **bcryptjs cost:** time `POST /api/auth/login` warm at 512 MB. If it's
-      painful, measure 1024 MB. More memory means more CPU and the same
-      per-ms price, so it can be nearly cost-neutral. Record both.
-- [ ] **Connections:** under a small burst (`hey`/`autocannon`, ~20
-      concurrent), the RDS `DatabaseConnections` CloudWatch metric stays at or
-      below the reserved concurrency (+ the migrator, if it's running), and
-      excess requests are throttled (429s) rather than piling onto Postgres.
-- [ ] **CORS from the real frontend:** point a Vercel deployment's
-      `VITE_API_URL` at the Function URL (inlined at build, so rebuild).
-      Add that origin to `CORS_ORIGINS` and `FRONTEND_URL`. Use a **stable**
-      Vercel URL (branch alias or custom env); per-deploy preview URLs change
-      every push. Browse → cart → checkout works in a real browser, with
-      preflights answered by Express.
+- [x] **`TRUST_PROXY`, found by experiment - and the experiment overturned
+      the plan's own assumption.** Added a temporary `/api/debug/ip` route
+      (added, used, removed - never shipped) and sent `curl -H
+      'X-Forwarded-For: 1.2.3.4'` at the live Function URL. Result: the
+      adapter passes a client-supplied `X-Forwarded-For` straight through
+      **unmodified** - my spoofed value replaced the real IP entirely, with
+      no trace of the genuine address anywhere. There is no CloudFront or
+      ALB in front of this Function URL to sanitize it. That means **no
+      value of `app.set('trust proxy', N)` is safe here**: any `N > 0` would
+      let a single caller mint a fresh rate-limit bucket per request for the
+      price of one header - strictly worse than the "everyone shares one
+      bucket" problem, not a fix for it. `TRUST_PROXY` stays `0`, now
+      confirmed correct rather than a guess (Terraform variable description
+      updated accordingly).
+    - The real fix: the true source IP does reach the app, just not as
+      `X-Forwarded-For`. AWS puts it in `requestContext.http.sourceIp` on
+      the Function URL event, and the adapter forwards that as the
+      `x-amzn-request-context` header - confirmed **not** spoofable by
+      trying to forge that header too (a fake `sourceIp` inside it had zero
+      effect; AWS overwrites the header before the adapter ever sees the
+      request). Added `src/lib/clientIp.js` to read it directly, wired into
+      both rate limiters via `keyGenerator` (unit tested,
+      `tests/clientIp.test.js`).
+    - Found a second real bug along the way: express-rate-limit validates
+      custom `keyGenerator`s and flagged that a raw IPv6 address is not a
+      safe bucket key on its own (a caller with a `/56` or wider allocation
+      could walk one address per request). Fixed with the library's own
+      `ipKeyGenerator` helper, collapsing to the containing `/56`.
+    - **Proved it live, not just in a unit test:** 11 failed logins against
+      a real seeded user hit exactly 10× `401` then `429` (limit is 10);
+      resending with a spoofed `X-Forwarded-For: 8.8.8.8` and then
+      `6.6.6.6` both still returned `429`; the `ratelimit.login` log line
+      showed my real IPv6 address throughout, never the spoofed ones.
+- [x] Honest caveat confirmed as still true and unchanged by the above: the
+      limiter is in-memory **per execution environment** - concurrency still
+      multiplies the effective budget, and a recycle still resets it.
+      Nothing here changes that; it only closes the *spoofing* hole, not the
+      *per-instance-budget* one. Reserved concurrency would bound it, but
+      this account's 10-execution ceiling (6.6) means none is set. The real
+      fix (shared store, or WAF in front of a CloudFront-fronted URL) stays
+      out of scope, per the original plan.
+- [x] **Cold start:** 11 forced cold starts (bumping `CONFIG_REV` before each
+      invoke to guarantee a fresh execution environment). `Init Duration`
+      p50 **≈1159 ms** (range 777–1543 ms); `boot.secrets_loaded` (the SSM
+      fetch inside that) p50 **≈221 ms** (range 181–248 ms) - so the SSM
+      round trip is a consistent ~19% of cold start, the rest being Node
+      startup, module load, and the adapter's own init. No provisioned
+      concurrency, as specified.
+- [x] **bcryptjs cost:** first pass against a nonexistent email measured the
+      wrong thing entirely - `authController.js` returns 401 before ever
+      calling `bcrypt.compare` when the user isn't found, so that path never
+      touches bcrypt at all (worth noting: also a timing side-channel for
+      user enumeration, out of scope to fix here). Re-measured against
+      `test@example.com` (a real seeded user, wrong password) so
+      `bcrypt.compare` actually runs: **512 MB p50 ≈513 ms** (9 warm
+      samples, 476–537 ms) vs **1024 MB p50 ≈332 ms** (9 warm samples,
+      313–339 ms) - about 35% faster. Not quite cost-neutral though: in
+      GB-seconds, 512 MB costs ~0.26 and 1024 MB costs ~0.33 per call, about
+      29% more expensive for the faster response. Left the deployed function
+      at the Terraform-declared 512 MB (reverted the live test change) -
+      whether the latency is worth the ~29% is a product call, not made
+      here.
+- [x] **Connections:** a 20-concurrent burst (`Promise.allSettled` over
+      `fetch`, since neither `hey` nor `autocannon` was installed) against
+      `/api/products` returned exactly **10× 200, 10× 429** - matching the
+      account's 10-execution concurrency ceiling (6.6) precisely; the excess
+      never touched the app at all, thrown back by Lambda itself.
+      `DatabaseConnections` peaked at **2** during the window (`PG_POOL_MAX
+      =1`, and most of the 10 successful requests reused already-warm
+      environments with pooled connections from the cold-start/bcrypt
+      testing minutes earlier) - nowhere near a risky level either way.
+- [ ] **CORS from the real frontend** - not yet done. No Vercel CLI or
+      project link exists on this machine, and the one frontend URL already
+      in `CORS_ORIGINS` (`dejavu-ten.vercel.app`) currently 404s. Needs a
+      decision on how to proceed (see conversation).
 
 ---
 

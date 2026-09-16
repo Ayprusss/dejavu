@@ -111,6 +111,38 @@ the repo, and the role cannot be assumed from a fork."
    approval, and the apply role is unassumable until approval is given, because
    `environment:production` is absent from the token until then.
 
+## Phase 6 runtime numbers (dev, measured in 6.9)
+
+Cold start `Init Duration` p50 **≈1159 ms** over 11 forced cold starts (range
+777–1543 ms), of which `boot.secrets_loaded` (the SSM fetch) is p50 **≈221
+ms** — about 19% of the total, the rest being Node startup, module load, and
+the Lambda Web Adapter's own init. No provisioned concurrency.
+
+`bcrypt.compare` on `POST /api/auth/login`, warm, against a real user (a
+nonexistent email short-circuits before ever calling bcrypt — measure against
+one that exists): **512 MB p50 ≈513 ms**, **1024 MB p50 ≈332 ms** (~35%
+faster). Not quite cost-neutral: 512 MB costs ~0.26 GB-s per call and 1024 MB
+~0.33 GB-s, about 29% more for the faster response. Deployed dev stays at the
+Terraform-declared 512 MB; bumping it is a product call, not made here.
+
+A 20-concurrent burst against `/api/products` returned exactly 10× `200` and
+10× `429`, matching this account's 10-execution Lambda concurrency ceiling
+(see `../phase-6-steps.md` 6.6 on reserved concurrency). `RDS
+DatabaseConnections` peaked at 2 during the burst (`PG_POOL_MAX=1`), nowhere
+close to a risky level.
+
+**`TRUST_PROXY` stays `0`, confirmed by experiment, not left as a guess.**
+This Function URL has no CloudFront or ALB in front of it, and the Lambda Web
+Adapter does not sanitize `X-Forwarded-For` — a client-supplied header
+reaches Express completely unmodified. Any nonzero trust-proxy value would
+make that header authoritative, letting one caller mint a fresh rate-limit
+bucket per request for the price of one header. The real source IP does
+reach the app, just not through Express's trust-proxy mechanism: it's in the
+`x-amzn-request-context` header's `http.sourceIp` field, which AWS sets from
+the actual Lambda event and overwrites regardless of what a caller sends
+(`backend/src/lib/clientIp.js` reads it directly; both rate limiters key on
+it instead of `req.ip`).
+
 ## The dependency nobody writes down
 
 Environment protection rules are **free on public repositories** and a **paid
