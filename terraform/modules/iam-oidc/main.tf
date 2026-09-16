@@ -357,6 +357,30 @@ data "aws_iam_policy_document" "apply" {
     }
   }
 
+  # RunInstances is authorized against every resource type it touches, not
+  # just the new instance: the AMI, the subnet, the security group, the
+  # auto-created network interface and the auto-created root volume. Found
+  # via a real AccessDenied naming network-interface/* specifically - the
+  # instance's own tag spec doesn't extend to the ENI or the AMI, so neither
+  # RequestTag nor ResourceTag can match for those two. Subnet, security
+  # group and volume are already tagged (or, for the volume, covered by
+  # RequestTag in the statement above), so this is scoped to exactly the two
+  # resource types that can never carry our tag.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2RunInstancesUntaggableComponents"
+      effect = "Allow"
+      actions = [
+        "ec2:RunInstances",
+      ]
+      resources = [
+        "arn:aws:ec2:${var.aws_region}:${var.account_id}:network-interface/*",
+        "arn:aws:ec2:${var.aws_region}::image/*",
+      ]
+    }
+  }
+
   dynamic "statement" {
     for_each = var.enable_workload_infrastructure ? [1] : []
     content {
@@ -405,6 +429,34 @@ data "aws_iam_policy_document" "apply" {
         test     = "StringEquals"
         variable = "aws:ResourceTag/Project"
         values   = ["dejavu"]
+      }
+    }
+  }
+
+  # RDS's storage_encrypted uses the account's default aws/rds key. The key
+  # exists and is enabled at the account level, but the calling principal
+  # still needs its own grant to use it - found via a real
+  # KMSKeyNotAccessibleFault on the first CreateDBInstance attempt.
+  # ViaService keeps this from being a general-purpose decryption grant, same
+  # pattern as EncryptDecryptThroughSSM above.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "EncryptDecryptThroughRds"
+      effect = "Allow"
+      actions = [
+        "kms:DescribeKey",
+        "kms:CreateGrant",
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["rds.${var.aws_region}.amazonaws.com"]
       }
     }
   }
