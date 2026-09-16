@@ -377,6 +377,12 @@ jobs:
           tags: ${{ matrix.target == 'api' && vars.ECR_API_REPO || vars.ECR_MIGRATOR_REPO }}:${{ github.sha }}
           build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.target }}
+          # Buildx attaches a provenance/SBOM attestation by default, which
+          # turns a single-arch push into an OCI image index. Lambda rejects
+          # that outright ("image manifest ... media type ... not
+          # supported") - found in 6.7 against a real CreateFunction call.
+          provenance: false
+          sbom: false
 
   # Aggregate gate: this is the single check to require in branch protection,
   # so adding a job above does not mean editing the protection rule.
