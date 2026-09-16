@@ -28,7 +28,7 @@ restored from PITR once and the steps are written down.
 | 6.5 | Bootstrap additions (human-applied) | ~$0 | [x] |
 | 6.6 | Terraform modules: network, rds, lambda, observability | $0 until applied | [x] |
 | 6.7 | First deploy to dev | **billing starts** | [x] |
-| 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [ ] |
+| 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [x] |
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [ ] |
 | 6.10 | Secret rotation actually exercised | | [ ] |
 | 6.11 | PITR restore drill, written down | | [ ] |
@@ -796,27 +796,55 @@ addition, not a default.
 The plan calls this the single biggest risk on the Lambda path, so it gets
 settled before anything else is built on top.
 
-- [ ] Stripe dashboard (test mode) → Webhooks → add endpoint
-      `<function-url>/api/webhooks/stripe`, events `checkout.session.completed`
-      (plus anything else `webhookController` handles). This endpoint's
-      `whsec_…` is **not** the one `stripe listen` prints.
-- [ ] `aws ssm put-parameter --name /dejavu/dev/STRIPE_WEBHOOK_SECRET --type SecureString --overwrite --value whsec_…`,
-      then bump `CONFIG_REV` (6.7 step 9).
-- [ ] `stripe trigger checkout.session.completed` → the dashboard shows a
-      **200** delivery; logs show `order.created`, **no
-      `webhook.signature_invalid`**.
-- [ ] Full path: from the storefront (Vercel pointed at the Function URL, see
-      6.9), buy with `4242 4242 4242 4242` → `order.created` +
-      `stock.decremented` → the order is visible via the admin API.
-- [ ] "Resend" the same event from the dashboard → `webhook.duplicate`, still
-      one order.
-- [ ] Negative: POST a correctly signed payload with one byte changed → 400
-      and `webhook.signature_invalid`.
-- [ ] If signatures fail: log `req.headers['content-type']`, body length and a
-      SHA-256 of the raw body next to the value Stripe shows, and compare. The
-      suspect is base64 or charset handling between Function URL → adapter →
-      `express.raw`. If it can't be made reliable, **Fargate + ALB is the
-      documented fallback**; write down what failed before switching.
+- [x] Webhook endpoint created via the Stripe API (equivalent to the
+      Dashboard path - `webhook_endpoints create`, since the Stripe CLI's
+      cached session key had expired and the account's local `.env` key
+      turned out to be expired too, not just the CLI's): `<function-url>
+      /api/webhooks/stripe`, event `checkout.session.completed` only -
+      confirmed via `webhookController.js` that it's the only type actually
+      handled (anything else already gets acknowledged 200 as unhandled, per
+      the checkpoint's existing design). Found and fixed two expired
+      credentials as a prerequisite: the CLI's stored session key, and the
+      `STRIPE_SECRET_KEY` already sitting in SSM from 6.7 step 4 - both
+      replaced with a fresh key from the Stripe Dashboard.
+- [x] Real `STRIPE_WEBHOOK_SECRET` set in SSM, `CONFIG_REV` bumped
+      (`aws lambda update-function-configuration` with the full existing
+      environment map re-sent plus the new `CONFIG_REV` value - the API
+      replaces the whole map, so this reads-modifies-writes rather than
+      setting one key).
+- [x] `stripe trigger checkout.session.completed` (via the Stripe CLI,
+      installed this session with `winget install Stripe.StripeCli`) → a
+      real 200 response from the live Function URL; CloudWatch logs show
+      `order.created` with a real order id, **no `webhook.signature_invalid`
+      anywhere**. This is the checkpoint - end to end, through the Function
+      URL → Lambda Web Adapter → `express.raw` → Stripe SDK signature
+      verification, the raw body survives intact.
+- [ ] Full path from the storefront (Vercel) - **deferred to 6.9**, which is
+      where the frontend actually gets pointed at this Function URL and
+      `CORS_ORIGINS` gets a real value to test against.
+- [x] Duplicate delivery, tested without the Dashboard's "Resend" (not
+      exposed via the API - confirmed by trying it and getting
+      `Unrecognized request URL`): self-signed a real captured
+      `checkout.session.completed` payload against a temporary webhook
+      endpoint's own secret (created, used, deleted - never touched via
+      Dashboard, secret never written to disk or printed, only held
+      in-process for the one script that used it), POSTed it twice with the
+      same event id. Both attempts logged `webhook.duplicate` /
+      `Event already processed, skipping` - confirms the `StripeEvent`
+      `ON CONFLICT DO NOTHING` claim.
+- [x] Negative signature test: same approach, one byte of the event `type`
+      field changed after computing the signature over the original body →
+      **400**, `webhook.signature_invalid` logged, exact message
+      `No signatures found matching the expected signature for payload`.
+      Signature verification is doing real cryptographic work, not passing
+      through by accident.
+- [x] Signatures never failed to verify on a genuine, unmodified delivery -
+      no base64/charset investigation was needed. Cleaned up after testing:
+      deleted the two now-orphaned webhook endpoints created along the way
+      (their secrets got superseded when SSM was rotated for the next test),
+      landing on one final, permanent endpoint whose secret is what's live
+      in SSM now - reverified with one more real `stripe trigger` against it
+      (clean `order.created`, no duplicate, no signature error).
 
 ---
 
@@ -934,7 +962,7 @@ interview". Prove that loop works before relying on it.
 
 ## Exit criteria
 
-- [ ] A real Stripe test-mode webhook to the Function URL verifies its
+- [x] A real Stripe test-mode webhook to the Function URL verifies its
       signature and records exactly one order (6.8).
 - [ ] RDS is not publicly accessible; 5432 is reachable only from the Lambda
       SG (SG reference, not CIDR).
