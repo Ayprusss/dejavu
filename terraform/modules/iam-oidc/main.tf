@@ -498,6 +498,7 @@ data "aws_iam_policy_document" "apply" {
       effect = "Allow"
       actions = [
         "ecr:DescribeRepositories",
+        "ecr:ListTagsForResource",
         "ecr:BatchGetImage",
         "ecr:GetDownloadUrlForLayer",
         "ecr:DescribeImages",
