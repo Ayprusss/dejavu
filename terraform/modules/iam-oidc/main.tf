@@ -334,6 +334,11 @@ data "aws_iam_policy_document" "apply" {
         "ec2:CreateSecurityGroup",
         "ec2:CreateNetworkInterface",
         "ec2:RunInstances",
+        # Found in 6.7: the provider tags a brand-new resource with a
+        # separate CreateTags call rather than folding default_tags into the
+        # create call's own TagSpecifications. That resource has no tags yet,
+        # so aws:ResourceTag can't match - only aws:RequestTag can, here.
+        "ec2:CreateTags",
       ]
       resources = ["*"]
 
@@ -492,6 +497,7 @@ data "aws_iam_policy_document" "apply" {
       sid    = "ReadEcrImages"
       effect = "Allow"
       actions = [
+        "ecr:DescribeRepositories",
         "ecr:BatchGetImage",
         "ecr:GetDownloadUrlForLayer",
         "ecr:DescribeImages",
