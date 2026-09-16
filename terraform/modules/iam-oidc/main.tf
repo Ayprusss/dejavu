@@ -339,6 +339,13 @@ data "aws_iam_policy_document" "apply" {
         # create call's own TagSpecifications. That resource has no tags yet,
         # so aws:ResourceTag can't match - only aws:RequestTag can, here.
         "ec2:CreateTags",
+        # aws_vpc_security_group_{ingress,egress}_rule creates a distinct,
+        # separately-ARNed "security-group-rule" resource (AWS's newer
+        # per-rule model) rather than mutating the security group itself.
+        # That new rule resource starts untagged, same reasoning as
+        # CreateTags above - only RequestTag matches for creating it.
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
       ]
       resources = ["*"]
 

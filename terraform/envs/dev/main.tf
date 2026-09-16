@@ -84,6 +84,12 @@ module "rds" {
   deletion_protection = false
   skip_final_snapshot = true
   apply_immediately   = true
+
+  # Found in 6.7: this account rejected the module's default of 7 with
+  # `FreeTierRestrictionError: ... exceeds the maximum available to free
+  # tier customers`. Still > 0, so PITR (6.11) stays possible; revisit if
+  # the account's plan changes.
+  backup_retention_period = 1
 }
 
 module "observability" {
