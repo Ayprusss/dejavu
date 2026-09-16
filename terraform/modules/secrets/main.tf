@@ -51,5 +51,14 @@ resource "aws_ssm_parameter" "app" {
     # Terraform declares which parameters must exist and who may read them.
     # It does not own what is in them.
     ignore_changes = [value]
+
+    # A destroy would take the real values with it, and the next apply would
+    # bring back only placeholders - every secret re-entered by hand, and a
+    # new Stripe webhook secret besides. The "destroy between demos" loop
+    # (6.12) tears down compute and data with `-target` and leaves these
+    # alone; this makes a plain `terraform destroy` fail loudly instead of
+    # quietly taking them too. Removing a parameter on purpose means deleting
+    # this line in the same change.
+    prevent_destroy = true
   }
 }
