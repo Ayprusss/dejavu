@@ -29,7 +29,7 @@ restored from PITR once and the steps are written down.
 | 6.6 | Terraform modules: network, rds, lambda, observability | $0 until applied | [x] |
 | 6.7 | First deploy to dev | **billing starts** | [x] |
 | 6.8 | **Raw-body gate:** real Stripe webhook verifies | | [x] |
-| 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [ ] |
+| 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [x] |
 | 6.10 | Secret rotation actually exercised | | [ ] |
 | 6.11 | PITR restore drill, written down | | [ ] |
 | 6.12 | Destroy → re-apply drill, cost check | | [ ] |
@@ -921,10 +921,34 @@ settled before anything else is built on top.
       =1`, and most of the 10 successful requests reused already-warm
       environments with pooled connections from the cold-start/bcrypt
       testing minutes earlier) - nowhere near a risky level either way.
-- [ ] **CORS from the real frontend** - not yet done. No Vercel CLI or
-      project link exists on this machine, and the one frontend URL already
-      in `CORS_ORIGINS` (`dejavu-ten.vercel.app`) currently 404s. Needs a
-      decision on how to proceed (see conversation).
+- [x] **CORS from the real frontend.** `dejavu-ten.vercel.app` was dead (the
+      project no longer exists under this account). Installed the Vercel
+      CLI, logged in via its device-code flow, and deployed `dejavu/` as a
+      new project. Production alias **`dejavu-seven.vercel.app`** (stable
+      across future `vercel --prod` redeploys, unlike per-deploy preview
+      URLs - confirmed distinct from the deployment-specific URL in the same
+      output). Set `VITE_API_URL` to the dev Function URL for the
+      `production` Vercel environment (inlined at build) and pointed
+      `envs/dev`'s `cors_origins`/`frontend_url` at this URL instead of the
+      module's `dejavustudio.xyz` default, applied via the normal CI path.
+    - Verified with a real browser (Claude in Chrome), not just curl:
+      `/pages/shop` fetched `/api/products` (200) and rendered both seeded
+      products correctly in the DOM (name, price, links) with **no CORS
+      error** in the console; the product detail page's own fetch
+      (`/api/products/:id`) also succeeded; a direct `OPTIONS` preflight
+      against `/api/checkout` with `Origin: https://dejavu-seven.vercel.app`
+      returned 204 with the right `access-control-allow-origin` - Express is
+      answering every preflight this frontend will send.
+    - **Found, out of scope to fix here:** the actual "add to cart, click
+      checkout" click-through is currently blocked by a pre-existing,
+      unrelated frontend bug - product images are hardcoded to
+      `dejavustudio.xyz/images/...` (a different, seemingly stale domain)
+      and 404, and the add-to-cart control never renders as a result
+      (confirmed via the accessibility tree: no add-to-cart button exists in
+      the DOM anywhere on the product page, despite the product data itself
+      loading correctly). This is a frontend asset/data issue, not a
+      CORS/Lambda/Terraform one - Phase 6 is the infra phase, and this bug
+      predates it. Worth its own fix, not folded in here.
 
 ---
 
