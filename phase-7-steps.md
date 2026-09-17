@@ -26,7 +26,7 @@ the smoke test fails → the alias reverts on its own → an alarm fires.
 | 7.2 | Lambda aliases + Function URL on the alias (dev) | $0 (URL changes) | [ ] |
 | 7.3 | Deploy role in bootstrap (human-applied) | $0 | [ ] |
 | 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [ ] |
-| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [ ] |
+| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [x] |
 | 7.6 | Expand/contract: written rule + CI guard | $0 | [ ] |
 | 7.7 | Alarms + SNS (`modules/observability`) | ~$0 | [ ] |
 | 7.8 | Stand up prod (`envs/prod`) | **prod billing starts** | [ ] |
@@ -456,7 +456,7 @@ The plan says under ~10 s, and exactly three checks.
 
 ## 7.5 — `deploy.yml`
 
-- [ ] Triggers:
+- [x] Triggers:
     - `workflow_run` on `CI`, `types: [completed]`, `branches: [main]`, with
       the job guarded by `github.event.workflow_run.conclusion == 'success'`
       and `event == 'push'`. **Deploy `github.event.workflow_run.head_sha`**,
@@ -464,36 +464,59 @@ The plan says under ~10 s, and exactly three checks.
       *latest* `main`, which may not be the commit CI built and pushed.
     - `workflow_dispatch` with inputs `environment` (dev/prod) and `sha`.
       That covers re-deploying a known SHA, rolling forward a fix, and 7.10's
-      drill.
-- [ ] `deploy-dev` job: `environment: dev`, assume `AWS_DEPLOY_ROLE_ARN_DEV`,
-      D9's skip check, `migrate.sh dev`, `deploy.sh dev`.
-- [ ] `deploy-prod` job: `needs: deploy-dev`, `environment: production`
+      drill. Added a third input, `drill` (boolean, default `false`), per
+      7.10's bypass below.
+- [x] `deploy-dev` job: `environment: dev`, assume `AWS_DEPLOY_ROLE_ARN_DEV`,
+      D9's skip check, `migrate.sh dev`, `deploy.sh dev`. Exposes a job
+      output (`skipped`) so `deploy-prod` can tell D9's runtime skip apart
+      from a job-level skip (see next item).
+- [x] `deploy-prod` job: `needs: deploy-dev`, `environment: production`
       (**required reviewer**, the gate), assume `AWS_DEPLOY_ROLE_ARN_PROD`,
       `promote-check.sh`, `migrate.sh prod`, `deploy.sh prod`.
     - If `deploy-dev` was *skipped* (dev destroyed), `deploy-prod` must not
       run. Nothing was verified in dev, so there's nothing to promote. Make
       that explicit in the `if:`. A skipped `needs` otherwise quietly skips
       dependants, and the next person to edit the condition may "fix" it.
-- [ ] **Shared concurrency with `terraform.yml`** (correction 4):
+      Done via `always()` + `needs.deploy-dev.result` + the `skipped` output;
+      a `workflow_dispatch` that targets `prod` directly makes `deploy-dev`
+      skip *by design* (its own `if` never matches), which is deliberately
+      let through — see the comment above `deploy-prod`'s `if:` in the file
+      for how the two "skipped" cases are told apart.
+- [x] **Shared concurrency with `terraform.yml`** (correction 4):
       `concurrency: { group: dejavu-deploy-<env>, cancel-in-progress: false }`
       on both workflows' dev and prod jobs. Job-level, not workflow-level, so
       a prod approval waiting for hours doesn't block dev.
-- [ ] **After `terraform.yml`'s apply, republish** (correction 2): its apply
+- [x] **After `terraform.yml`'s apply, republish** (correction 2): its apply
       jobs end with `deploy.sh <env> <live sha>`, reading the live SHA from
       `/api/version`, so config changes reach the alias. Skip it when the plan
-      reported no changes.
-- [ ] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
+      reported no changes. Detected with `terraform plan -detailed-exitcode`
+      (0 = no changes, 2 = changes) run before `apply`, which now applies the
+      saved plan file instead of re-planning inline. Assumes the deploy role
+      (not the apply role) for the republish step only, since the apply role
+      has no `UpdateFunctionCode`/`PublishVersion`/`UpdateAlias` (7.3).
+- [x] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
       (unchanged). Only code auto-promotes, never infrastructure.
-- [ ] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
+- [x] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
       this with Trivy; the deploy path is where it matters most, because these
-      jobs hold prod credentials).
-- [ ] `actionlint` clean (via Docker, as in 6.4).
-- [ ] **Why the manual gate, when everything is automated?** Write the answer
+      jobs hold prod credentials). `actions/checkout` and
+      `aws-actions/configure-aws-credentials` pinned by commit SHA resolved
+      from their `v4` tags via `gh api .../git/ref/tags/v4` (and, for the
+      annotated `configure-aws-credentials` tag, dereferenced to the commit
+      it points at), with a `# vX.Y.Z` comment. `terraform.yml`'s own action
+      refs were left as version tags, matching that file's existing
+      convention — the pin-by-SHA requirement in the plan is scoped to
+      `deploy.yml`.
+- [x] `actionlint` clean (via Docker, as in 6.4). Ran
+      `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color`
+      against the whole `.github/workflows/` directory — no findings.
+- [x] **Why the manual gate, when everything is automated?** Write the answer
       in the workflow comment, because the roadmap asks it. The smoke test
       only catches what it checks. The gate is where a human looks at dev
       after a real click-through and decides the change is one they meant to
       ship. On a Free-plan private repo the gate wouldn't enforce at all
-      (Phase 5's finding), so staying public is still load-bearing.
+      (Phase 5's finding), so staying public is still load-bearing. Written
+      as the comment block directly above the `deploy-prod` job in
+      `deploy.yml`.
 
 ---
 
