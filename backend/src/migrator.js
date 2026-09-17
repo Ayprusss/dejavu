@@ -98,9 +98,7 @@ const looksLikeEmail = (value) =>
  */
 const grantAdmin = async (email) => {
   if (!looksLikeEmail(email)) {
-    throw new Error(
-      `grant-admin requires a valid "email" string.`,
-    );
+    throw new Error(`grant-admin requires a valid "email" string.`);
   }
 
   const pool = require('./db/pool');
