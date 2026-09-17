@@ -38,6 +38,21 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # scripts/deploy/*.sh (7.4) are plain bash, not part of either npm
+      # workspace, and shellcheck isn't installed on the runner - Docker is
+      # the same way 6.4 runs actionlint. This only needs to run once, not
+      # once per matrix leg, so it's pinned to a single workspace and
+      # overrides the matrix's working-directory back to the repo root.
+      - name: Shellcheck scripts/deploy
+        if: matrix.workspace == 'backend'
+        working-directory: .
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable \
+            scripts/deploy/*.sh \
+            scripts/deploy/test/run.sh \
+            scripts/deploy/test/fake-bin/aws \
+            scripts/deploy/test/fake-bin/curl
+
   test-backend:
     name: test-backend (node ${{ matrix.node }})
     runs-on: ubuntu-latest

@@ -1,0 +1,12 @@
+# scripts/deploy/*.sh, scripts/deploy/test/run.sh and the fake-bin/* scripts
+# all compare against the literal string "$LATEST" - Lambda's own sentinel
+# for the unqualified version (correction 1 in phase-7-steps.md; the $LATEST
+# bootstrap-alias case in deploy.sh depends on it being a literal, not an
+# expansion). That's SC2016 on every occurrence, so it's disabled repo-wide
+# for this directory rather than annotated line by line.
+disable=SC2016
+
+# SC2001 (style): the test harness indents a possibly multi-line captured
+# output with `sed 's/^/    /'` for readability in FAIL output. A pure
+# parameter-substitution replacement is less readable here for no benefit.
+disable=SC2001
