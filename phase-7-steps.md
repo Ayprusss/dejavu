@@ -526,7 +526,7 @@ Migrations run before code (7.5). For the length of a deploy, and for as long
 as a rollback might last, **the previous release runs against the new
 schema**. Rolling back the code doesn't roll back the schema.
 
-- [x] **Write the rule** in `backend/migrations/README.md`: every migration
+- [x] **Write the rule** in `backend/MIGRATIONS.md`: every migration
       must be safe for the release currently in prod. Allowed in one deploy:
       add a nullable column or one with a default, add a table, add an index
       (`CONCURRENTLY` where the table is big enough to matter; it isn't yet,
@@ -540,7 +540,11 @@ schema**. Rolling back the code doesn't roll back the schema.
       still writing both; (3) stop writing the old, and **only in a later
       deploy** drop it. Rollback from deploy N lands on deploy N−1, which is
       safe at every step only if the drop never ships alongside the code that
-      stopped using the column. Written up in `backend/migrations/README.md`.
+      stopped using the column. Written up in `backend/MIGRATIONS.md`.
+      **Moved out of `backend/migrations/`** after the merge: node-pg-migrate
+      reads every file in that directory, and `README.md` failed every run
+      with `Cannot determine numeric prefix for "README.md"`. Found by
+      running the integration suite on the combined branch.
 - [x] **Guard in CI:** a `migration-safety` step in the `migrations` job. For
       `.sql` files *added* in the PR (diffed against the PR's base commit, or
       the pre-push commit on a push to `main`), grep the `-- Up Migration`
@@ -848,7 +852,7 @@ variable to the shipped code. A kill switch in prod code is its own bug.
       expand/contract as a rule for anyone writing a migration, and
       `grant-admin`. Update "Phase 6" wording where it now means both
       environments.
-- [ ] `backend/migrations/README.md` (7.6).
+- [ ] `backend/MIGRATIONS.md` (7.6).
 - [ ] `dejavu-execution-plan.md`: mark Phase 7 and batch H `[x]`; fix rows 3
       and 4 of the Verification table (7.0); add **"What Phase 7 actually
       turned up"**, keeping only the corrections that bit; and update the

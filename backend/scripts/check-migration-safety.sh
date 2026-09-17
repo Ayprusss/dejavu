@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # CI guard for the expand/contract rule (phase-7-steps.md 7.6, written up in
-# backend/migrations/README.md). Migrations run before code and the previous
+# backend/MIGRATIONS.md). Migrations run before code and the previous
 # release keeps running against the new schema for as long as a rollback
 # might last, so a migration that release can't tolerate needs a human to
 # say so on purpose, with a `-- contract: <why this is safe now>` line,
@@ -45,7 +45,7 @@ mapfile -t changed_existing < <(
 )
 
 if [[ ${#changed_existing[@]} -gt 0 ]]; then
-  echo "::error::Existing migration file(s) modified or deleted - never edit an applied migration, add a new one (backend/migrations/README.md):"
+  echo "::error::Existing migration file(s) modified or deleted - never edit an applied migration, add a new one (backend/MIGRATIONS.md):"
   printf '  %s\n' "${changed_existing[@]}"
   status=1
 fi
@@ -78,7 +78,7 @@ for file in "${added[@]}"; do
 
   if grep -qiE "${destructive_pattern}" <<<"${up_section}"; then
     if ! grep -qiE '^--[[:space:]]*contract:' "${file}"; then
-      echo "::error file=${file}::Destructive statement in the Up migration with no '-- contract: <reason>' line (see backend/migrations/README.md)"
+      echo "::error file=${file}::Destructive statement in the Up migration with no '-- contract: <reason>' line (see backend/MIGRATIONS.md)"
       status=1
     fi
   fi
