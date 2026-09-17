@@ -1205,9 +1205,10 @@ the agent read the logs back and verified.
 - [ ] Merge. `apply-dev` runs on the merge and should be a no-op plan, because
       you applied from the branch in 6.7. If it isn't, find out why before
       shipping anything else.
-- [ ] Delete this file before merge, as with Phase 5, or keep it. Your call.
-      Note: `terraform/README.md`, `envs/dev/main.tf` and the execution plan
-      link to it, so deleting it means dropping those references too.
+- [x] Delete this file before merge, as with Phase 5, or keep it. Your call.
+      — **Kept in the repo** (unlike Phase 5's): it's the only record of
+      every measurement and gotcha, and `terraform/README.md`,
+      `envs/dev/main.tf` and the execution plan link to it.
 
 ---
 
