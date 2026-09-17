@@ -4,3 +4,11 @@ node_modules
 npm-debug.log
 err.log
 error.log
+
+tests/
+coverage/
+postman/
+*.md
+scripts/
+eslint.config.mjs
+vitest*.mjs

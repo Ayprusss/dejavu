@@ -22,8 +22,8 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 | **D** | 3 — Correctness fixes **[x]** | Webhook is transactional; stock decrements atomically |
 | **E** | 4 — Integration in CI **[x]** · E2E deferred | Idempotency and no-oversell proven by tests |
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
-| **F** | 5 — Terraform + OIDC + secrets **[~]** | `plan` on PR with no AWS keys in the repo |
-| **G** | 6 — RDS + Lambda deploy | Real Stripe webhook verifies against the Function URL |
+| **F** | 5 — Terraform + OIDC + secrets **[x]** | `plan` on PR with no AWS keys in the repo |
+| **G** | 6 — RDS + Lambda deploy **[x]** | Real Stripe webhook verifies against the Function URL |
 | **H** | 7 — Staging → prod CD | Broken build auto-rolls back |
 
 Phase 2 is split because it is by far the largest — the scaffolding is low-risk and the rewrite is where the bugs hide, so they get separate review. Batch E is a genuine stopping point: the resume value of Phases 0–4 is high and the cost is nothing, so it's a reasonable place to pause and reassess appetite for the AWS half.
@@ -49,7 +49,7 @@ Phase 2 is split because it is by far the largest — the scaffolding is low-ris
 
 **2. The data-layer rewrite is a CI/CD prerequisite, not a cloud one.** Roadmap #5's marquee tests — idempotency under replay, no overselling under concurrency — require transactions and row-level locking. The Supabase client cannot express either. So the *rewrite* (Supabase → `pg`) must happen inside the CI/CD phase, running against Dockerized Postgres. *Provisioning RDS* is a separate, later, purely-infrastructural step. This is what makes "CI/CD first, cloud later" work with "full RDS migration" — they are two halves of roadmap #2 and they separate cleanly.
 
-**3. Lambda-in-VPC + private RDS has a cost trap.** A VPC-attached Lambda has no route to the internet, and this backend calls the Stripe API on every checkout. A NAT Gateway is ~$33/mo — more than the Fargate you chose Lambda to avoid. Resolved in Phase 6 with a NAT instance (~$3.50/mo); flagged here because it changes the cost math behind the compute decision.
+**3. Lambda-in-VPC + private RDS has a cost trap.** A VPC-attached Lambda has no route to the internet, and this backend calls the Stripe API on every checkout. A NAT Gateway is ~$33/mo — more than the Fargate you chose Lambda to avoid. Resolved in Phase 6 with a NAT instance (~$10/mo at list price once its public IPv4 is counted; see Phase 6); flagged here because it changes the cost math behind the compute decision.
 
 ### Sequencing
 
@@ -60,8 +60,8 @@ Phase 2  Postgres data layer          roadmap #2a  ~1-2 weeks   [done] <- larges
 Phase 3  Correctness fixes            roadmap #5a  ~1 week      [done]
 Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      [integration done; E2E deferred]
 -- CI/CD complete; everything above costs $0 --
-Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week   [built; not applied]
-Phase 6  RDS + Lambda deploy          roadmap #2b/#4
+Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week   [done]
+Phase 6  RDS + Lambda deploy          roadmap #2b/#4            [done; dev only]
 Phase 7  Staging -> prod CD           roadmap #6
 ```
 
@@ -311,7 +311,7 @@ Two things fixed it. A barrier in the Stripe stub holds every delivery until all
 
 ---
 
-# Phase 5 — Terraform + GitHub OIDC + Secrets Manager [~]
+# Phase 5 — Terraform + GitHub OIDC + Secrets Manager [x]
 
 *Roadmap #3. Highest-signal item on the list.*
 
@@ -380,9 +380,11 @@ to zero.
 
 ---
 
-# Phase 6 — RDS + Lambda Web Adapter
+# Phase 6 — RDS + Lambda Web Adapter [x]
 
-*Roadmap #2's AWS half and #4, adapted to the Lambda choice.*
+*Roadmap #2's AWS half and #4, adapted to the Lambda choice.* Applied to dev
+only (prod is Phase 7). The step-by-step record, with every measurement, is
+`phase-6-steps.md`; the runbooks are in `terraform/README.md`.
 
 ### The NAT decision — resolve this first
 
@@ -391,7 +393,7 @@ VPC-attached Lambda has no internet route, and this backend calls the Stripe API
 | Option | Cost | Trade-off |
 |---|---|---|
 | NAT Gateway | ~$33/mo | Defeats the entire reason for choosing Lambda over Fargate. |
-| **NAT instance (t4g.nano)** | **~$3.50/mo** | Single-AZ SPOF, self-managed. **Recommended.** |
+| **NAT instance (t4g.nano)** | **~$3.50/mo** | Single-AZ SPOF, self-managed. **Recommended.** *(Built as `t4g.micro`, because `t4g.nano` isn't free-tier eligible on this account, and the public IPv4 adds $3.65: ~$10/mo at list price.)* |
 | Public RDS, SG-locked | $0 | Guts the private-subnet story that roadmap #2's depth rests on. |
 
 Take the NAT instance. "I chose a NAT instance over a NAT gateway because at my traffic the gateway's hourly charge dominated the bill, and I accepted a single-AZ failure mode I can articulate" is a *better* interview answer than either alternative.
@@ -400,7 +402,9 @@ Take the NAT instance. "I chose a NAT instance over a NAT gateway because at my 
 
 **Raw body integrity through the adapter — the single biggest risk in the Lambda path.** Stripe signature verification requires the exact raw bytes. Lambda Function URLs base64-encode bodies for some content types and the Web Adapter decodes them; a byte-for-byte mismatch fails `constructEvent`. **Verify this end-to-end in dev before committing to the path**, and keep Fargate + ALB as the documented fallback if it can't be made reliable.
 
-**Native `bcrypt`.** The current image is `node:20-alpine` (musl); Lambda runs glibc on AL2023. Switch to **`bcryptjs`** — pure JS, no native build, no architecture mismatch, small and measurable performance cost. Honest and portable beats clever here.
+**Native `bcrypt`.** The current image is `node:20-alpine` (musl); Lambda runs glibc on AL2023. Switch to **`bcryptjs`** — pure JS, no native build, no architecture mismatch, small and measurable performance cost. Honest and portable beats clever here. *(Corrected in Phase 6: for a container image the musl/glibc point doesn't apply, because Lambda runs the image's own userland. The real risk is CPU architecture, x86 build vs arm64 function. `bcryptjs` is still right, for that reason. Measured cost: ~513 ms per login at 512 MB.)*
+
+**Outcome:** the raw-body risk did not materialize. A real `stripe trigger` through Function URL → adapter → `express.raw` verified first time, a one-byte tamper returned 400, and a replay was deduplicated. Fargate stays an unused fallback.
 
 ### Build
 
@@ -419,6 +423,84 @@ Adapter config: `AWS_LWA_PORT=5000`, `AWS_LWA_READINESS_CHECK_PATH=/api/status`,
 ### Frontend
 
 Stays on **Vercel** — the roadmap already cut CloudFront, and Vercel does that job for free. CI adds a build check only. Note `VITE_API_URL` is inlined at build time, so the frontend artifact is environment-specific.
+
+### What Phase 6 actually turned up
+
+Kept only what bit. The full list of eleven pre-build corrections, and how
+each played out, is in `phase-6-steps.md`.
+
+**IAM, found against real `AccessDenied`s, not predicted.** The Phase 5 apply
+role's blanket `Deny iam:*` blocked creating a Lambda at all (a function
+needs `iam:PassRole` on its execution role). It was narrowed to read plus
+PassRole on exactly one bootstrap-owned role. The first real apply then took
+**eight** dispatches. EC2 create calls authorize against the new resource
+*and* the existing parent VPC. `RunInstances` checks the auto-created network
+interface and the AMI, which never carry the project tag. The provider reads
+tags back on budgets, RDS, logs and ECR, so it needs the matching
+`ListTags*` permissions. One of those had been removed as "drift" in the
+bootstrap apply; it was load-bearing.
+
+**The account constrained the design.** It's on the AWS Free plan: RDS
+backup retention 7 was refused (dev runs at 1, which still allows PITR),
+`t4g.nano` isn't eligible (NAT is `t4g.micro`), and Lambda concurrency is
+capped at 10 account-wide, so no reserved concurrency can be set at all.
+
+**Build and network.** buildx's default provenance attestations produce an
+image index that Lambda's `CreateFunction` rejects, so every push uses
+`--provenance=false --sbom=false`. Both base images failed Trivy on npm's own
+bundled dependencies; npm is deleted from the runtime stages, since nothing
+calls it. AL2023's `iptables-services` ships a `FORWARD -j REJECT`, so the
+NAT forwarded nothing until two `ACCEPT` rules went in ahead of it. That was
+diagnosed with a temporary instance profile, which was removed afterwards.
+
+**Rate limiting on the Function URL.** The adapter passes a client's
+`X-Forwarded-For` through unmodified, so *no* `trust proxy` value is safe.
+Proven by experiment: a spoofed header replaced the real IP entirely. The
+limiters now key on `x-amzn-request-context`'s `sourceIp`, which AWS sets and
+a caller can't override, collapsed to `/56` for IPv6. Verified live: 10× 401
+then 429, still 429 with forged headers.
+
+**Rotation and restore, exercised rather than assumed.** A real
+`rotate-secret`: open connections survive; a warm environment that
+reconnects with a cached old password takes exactly one `28P01` and recovers
+on the next request. PITR restore to a new instance took **37 min 43 s**
+(22 min of that a post-restore backup). The copy needed no credential change
+because the password lives in the data, and it sits outside Terraform state.
+
+**Destroy and re-apply.** The destroy took **20 min 23 s**, nearly all of it
+Hyperplane ENI release. Zero to a verified webhook took **~13 min**. The
+Function URL changes on every re-create, so the Stripe endpoint and Vercel's
+`VITE_API_URL` follow it. A plain destroy would have taken the SSM secrets
+with it; `prevent_destroy` plus a targeted destroy prevents that. The re-apply
+also exposed that the migrator never had `FRONTEND_URL`, so every seed had
+written image URLs that 404.
+
+**Measured:** cold start p50 ≈1.16 s (SSM fetch ≈0.22 s of it); login
+(`bcryptjs`) p50 ≈513 ms at 512 MB, ≈332 ms at 1024 MB for ~29% more
+GB-seconds.
+
+### What I'd do differently
+
+- **A least-privilege `dejavu_app` database role**, created by a migration,
+  instead of connecting as the RDS master user (D8). IAM database
+  authentication would remove the password entirely.
+- **A stable hostname in front of the Function URL.** Every re-create
+  changes the URL and breaks Stripe and the frontend until both are updated.
+  The same CloudFront would also allow WAF rate limiting.
+- **A shared rate-limit store** (or WAF). The in-memory limiter is per
+  execution environment, so concurrency multiplies the budget.
+- **Retry once on `28P01`** after `invalidate()`, so a rotation is invisible
+  to callers rather than one failed request.
+- **VPC endpoints for the AWS calls** (SSM, Secrets Manager) at ~$7/month
+  per endpoint per AZ, about $29 for two AZs. That takes the NAT off the
+  cold-start path. It can't remove the NAT, though: Stripe is on the public
+  internet, so checkout still needs egress.
+- **RDS Proxy** only if concurrency × `PG_POOL_MAX` approaches
+  `max_connections`. Peak observed was 2.
+- **IAM Identity Center instead of a static admin access key**, once AWS
+  Organizations is worth enabling (6.0 deviation).
+- **Split the SSM parameters into their own state** if a second or third
+  environment makes a targeted destroy error-prone.
 
 ---
 
@@ -447,8 +529,8 @@ Each phase has a concrete gate:
 | 2 | **[x]** `docker compose up` → migrate → seed → browse the storefront end to end. `npm run migrate:down` unwinds cleanly. `grep -r supabase backend/src` → nothing. |
 | 3 | Manually replay a webhook twice against local Postgres → one order. `stripe trigger checkout.session.completed` against a local `stripe listen`. |
 | 4 | Idempotency, oversell, and out-of-order tests green in CI against a real Postgres service container. Playwright trace artifact on a deliberate failure. |
-| 5 | `terraform plan` runs on a PR with no AWS keys in the repo. Confirm the role cannot be assumed from a fork. |
-| 6 | Real Stripe webhook to the Function URL verifies its signature. Restore the database from PITR and document the steps. |
+| 5 | **[x]** `terraform plan` runs on a PR with no AWS keys in the repo. Confirm the role cannot be assumed from a fork. |
+| 6 | **[x]** Real Stripe webhook to the Function URL verifies its signature. Restore the database from PITR and document the steps. |
 | 7 | Deploy a deliberately broken build → smoke test fails → alias auto-reverts → alarm fires. |
 
 ## Two honesty rules, carried forward
@@ -462,9 +544,19 @@ Each phase has a concrete gate:
 | Item | Monthly |
 |---|---|
 | Phases 0–5 | **$0** — local, GitHub Actions (free on public repos), S3 state, IAM, SSM Parameter Store |
-| `db.t4g.micro` RDS | ~$12–15 (verify current free-tier terms; they changed in 2025) |
-| NAT instance t4g.nano | ~$3.50 |
-| Lambda + ECR + CloudWatch | ~$0–2 at this traffic |
-| **Total once Phase 6 lands** | **~$16–20**, → ~$0 with `terraform destroy` between demos |
+| `db.t4g.micro` RDS + 20 GB gp3 | ~$14 |
+| NAT instance `t4g.micro` + its public IPv4 + root volume | ~$10.50 |
+| Secrets Manager (1 secret) + ECR storage | ~$0.60 |
+| Lambda + CloudWatch | ~$0–1 at this traffic |
+| **Total once Phase 6 lands (list price)** | **~$25–26**, → ~$0.20 with a targeted `terraform destroy` between demos |
 
-`terraform destroy` after a demo, `apply` before an interview. Budgets alarm at $5 as the backstop.
+**What this account actually paid:** $0. It's on the AWS Free plan, which
+covers the RDS, NAT and IPv4 hours; month-to-date usage of $0.41 was absorbed
+by credits. The table is what a paid account would see. A 48-hour Cost
+Explorer re-check is still owed.
+
+`terraform destroy` after a demo (~20 min), `apply` before an interview (~13
+min to a verified webhook); the runbook is in `terraform/README.md`. The dev
+budget alarms at $30, with a $40 account-wide backstop, because a $5 budget
+watching the whole account would have fired on day one and been ignored
+from then on.

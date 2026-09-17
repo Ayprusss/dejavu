@@ -1,0 +1,22 @@
+# CVEs deliberately suppressed from the image-scan CI gate (.github/workflows/ci.yml).
+#
+# Only add an entry here for a HIGH/CRITICAL finding with NO available fix —
+# `ignore-unfixed: true` already drops those automatically, so anything listed
+# below is an exception someone reviewed on purpose, not a default. Failing a
+# PR on a CVE no PR can fix just trains people to ignore the gate.
+#
+# Format: one CVE id per line, followed by a reason and the date it was added.
+# Re-check periodically — an upstream fix can land after the entry does.
+#
+#   CVE-2024-XXXXX # reason the image can't yet drop this dependency — 2026-01-15
+
+# migrator target only (public.ecr.aws/lambda/nodejs:22, Amazon Linux 2023):
+# openssl-fips-provider-latest / openssl-snapsafe-libs, installed at
+# 3.5.7-2.amzn2023.0.1. The advisory's fixed version (0.2) is not yet in the
+# `amazonlinux` repo this base image points at — verified directly, not
+# assumed: `dnf update -y openssl-fips-provider-latest openssl-snapsafe-libs`
+# in the Dockerfile's migrator stage reports "Nothing to do." That RUN step
+# stays in the Dockerfile so the fix is picked up automatically the moment
+# it's published, without another code change. Re-check if this is still
+# needed next time the Dockerfile changes.
+CVE-2026-14456 # fix not yet in the AL2023 repo mirror; dnf update is a no-op today — 2026-09-11

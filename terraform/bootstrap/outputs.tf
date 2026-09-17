@@ -24,3 +24,23 @@ output "apply_role_arn_prod" {
   description = "Set as the AWS_APPLY_ROLE_ARN_PROD repo variable."
   value       = module.roles_prod.apply_role_arn
 }
+
+output "push_role_arn" {
+  description = "Set as the AWS_PUSH_ROLE_ARN repo variable."
+  value       = module.workload_roles.push_role_arn
+}
+
+output "ecr_api_repository_url" {
+  description = "Set as the ECR_API_REPO repo variable."
+  value       = module.workload_roles.ecr_repository_urls["dejavu-api"]
+}
+
+output "ecr_migrator_repository_url" {
+  description = "Set as the ECR_MIGRATOR_REPO repo variable."
+  value       = module.workload_roles.ecr_repository_urls["dejavu-migrator"]
+}
+
+output "workload_role_arn_dev" {
+  description = "Lambda execution role for dev - consumed by envs/dev's modules/lambda."
+  value       = module.workload_roles.workload_role_arns["dev"]
+}

@@ -267,6 +267,344 @@ data "aws_iam_policy_document" "apply" {
     actions   = ["tag:GetResources", "sts:GetCallerIdentity"]
     resources = ["*"]
   }
+
+  # --- Everything below is Phase 6, and only present when
+  # enable_workload_infrastructure is true (dev only, per D6). ---
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "PassWorkloadRoleToLambda"
+      effect    = "Allow"
+      actions   = ["iam:PassRole"]
+      resources = [var.workload_role_arn]
+
+      condition {
+        test     = "StringEquals"
+        variable = "iam:PassedToService"
+        values   = ["lambda.amazonaws.com"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "ReadWorkloadRole"
+      effect    = "Allow"
+      actions   = ["iam:GetRole"]
+      resources = [var.workload_role_arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "Ec2VpcDescribe"
+      effect    = "Allow"
+      actions   = ["ec2:Describe*"]
+      resources = ["*"]
+    }
+  }
+
+  # RunInstances touches image, subnet, SG, ENI and volume resources, and only
+  # some of them take tag conditions (correction/step note).
+  #
+  # Found by real AccessDenied in 6.7: many of these actions create a
+  # resource *inside* an existing VPC, and EC2 authorizes the call against
+  # BOTH the new resource (which aws:RequestTag/Project covers) AND the
+  # parent VPC it's being created in (which isn't being tagged by this call,
+  # so aws:RequestTag never matches for that leg - it needs
+  # aws:ResourceTag/Project instead, since the parent VPC already carries the
+  # tag by the time a subnet/SG/instance is created inside it). Actions that
+  # touch an existing VPC/IGW at all - even ones that create nothing new,
+  # like AttachInternetGateway or CreateRoute - are granted only via
+  # ResourceTag, in the Ec2VpcModifyDelete statement below; actions that
+  # create a genuinely new resource are granted in both statements, so
+  # whichever leg IAM is checking finds a match.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2VpcCreate"
+      effect = "Allow"
+      actions = [
+        "ec2:CreateVpc",
+        "ec2:CreateSubnet",
+        "ec2:CreateRouteTable",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateNetworkInterface",
+        "ec2:RunInstances",
+        # Found in 6.7: the provider tags a brand-new resource with a
+        # separate CreateTags call rather than folding default_tags into the
+        # create call's own TagSpecifications. That resource has no tags yet,
+        # so aws:ResourceTag can't match - only aws:RequestTag can, here.
+        "ec2:CreateTags",
+        # aws_vpc_security_group_{ingress,egress}_rule creates a distinct,
+        # separately-ARNed "security-group-rule" resource (AWS's newer
+        # per-rule model) rather than mutating the security group itself.
+        # That new rule resource starts untagged, same reasoning as
+        # CreateTags above - only RequestTag matches for creating it.
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "aws:RequestTag/Project"
+        values   = ["dejavu"]
+      }
+    }
+  }
+
+  # RunInstances is authorized against every resource type it touches, not
+  # just the new instance: the AMI, the subnet, the security group, the
+  # auto-created network interface and the auto-created root volume. Found
+  # via a real AccessDenied naming network-interface/* specifically - the
+  # instance's own tag spec doesn't extend to the ENI or the AMI, so neither
+  # RequestTag nor ResourceTag can match for those two. Subnet, security
+  # group and volume are already tagged (or, for the volume, covered by
+  # RequestTag in the statement above), so this is scoped to exactly the two
+  # resource types that can never carry our tag.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2RunInstancesUntaggableComponents"
+      effect = "Allow"
+      actions = [
+        "ec2:RunInstances",
+      ]
+      resources = [
+        "arn:aws:ec2:${var.aws_region}:${var.account_id}:network-interface/*",
+        "arn:aws:ec2:${var.aws_region}::image/*",
+      ]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "Ec2VpcModifyDelete"
+      effect = "Allow"
+      actions = [
+        # Also-created-elsewhere actions, granted here too for the
+        # parent-VPC leg of authorization (see comment above).
+        "ec2:CreateSubnet",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateNetworkInterface",
+        "ec2:RunInstances",
+        # Actions that tag or touch an existing resource, never a new one.
+        "ec2:CreateTags",
+        "ec2:DeleteTags",
+        "ec2:CreateRoute",
+        "ec2:AttachInternetGateway",
+        "ec2:DetachInternetGateway",
+        "ec2:ModifyVpcAttribute",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ModifyInstanceAttribute",
+        "ec2:ModifyNetworkInterfaceAttribute",
+        "ec2:AssociateRouteTable",
+        "ec2:DisassociateRouteTable",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupEgress",
+        "ec2:AssociateAddress",
+        "ec2:DisassociateAddress",
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        "ec2:TerminateInstances",
+        "ec2:DeleteVpc",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteRoute",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteNetworkInterface",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "aws:ResourceTag/Project"
+        values   = ["dejavu"]
+      }
+    }
+  }
+
+  # RDS's storage_encrypted uses the account's default aws/rds key. The key
+  # exists and is enabled at the account level, but the calling principal
+  # still needs its own grant to use it - found via a real
+  # KMSKeyNotAccessibleFault on the first CreateDBInstance attempt.
+  # ViaService keeps this from being a general-purpose decryption grant, same
+  # pattern as EncryptDecryptThroughSSM above.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "EncryptDecryptThroughRds"
+      effect = "Allow"
+      actions = [
+        "kms:DescribeKey",
+        "kms:CreateGrant",
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+      ]
+      resources = ["*"]
+
+      condition {
+        test     = "StringEquals"
+        variable = "kms:ViaService"
+        values   = ["rds.${var.aws_region}.amazonaws.com"]
+      }
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "RdsDescribe"
+      effect    = "Allow"
+      actions   = ["rds:Describe*"]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "RdsManageOwn"
+      effect = "Allow"
+      actions = [
+        "rds:CreateDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:CreateDBSubnetGroup",
+        "rds:ModifyDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup",
+        "rds:CreateDBParameterGroup",
+        "rds:ModifyDBParameterGroup",
+        "rds:DeleteDBParameterGroup",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource",
+        "rds:ListTagsForResource",
+        "rds:RestoreDBInstanceToPointInTime",
+      ]
+      resources = [
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:db:dejavu-*",
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:subgrp:dejavu-*",
+        "arn:aws:rds:${var.aws_region}:${var.account_id}:pg:dejavu-*",
+      ]
+    }
+  }
+
+  # For the RDS-managed master password secret (manage_master_user_password).
+  # Reading its value belongs to the workload role, not this one.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageRdsManagedSecret"
+      effect = "Allow"
+      actions = [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:TagResource",
+        "secretsmanager:UntagResource",
+        "secretsmanager:ListTagsForResource",
+        "secretsmanager:RotateSecret",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:DeleteSecret",
+      ]
+      resources = ["arn:aws:secretsmanager:${var.aws_region}:${var.account_id}:secret:rds!*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageLambda"
+      effect = "Allow"
+      actions = [
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:UpdateFunctionCode",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListVersionsByFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:ListTags",
+        "lambda:CreateFunctionUrlConfig",
+        "lambda:UpdateFunctionUrlConfig",
+        "lambda:DeleteFunctionUrlConfig",
+        "lambda:GetFunctionUrlConfig",
+        "lambda:AddPermission",
+        "lambda:RemovePermission",
+        "lambda:GetPolicy",
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteFunctionConcurrency",
+        "lambda:GetFunctionConcurrency",
+      ]
+      resources = ["arn:aws:lambda:${var.aws_region}:${var.account_id}:function:dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure && length(var.ecr_repository_arns) > 0 ? [1] : []
+    content {
+      sid    = "ReadEcrImages"
+      effect = "Allow"
+      actions = [
+        "ecr:DescribeRepositories",
+        "ecr:ListTagsForResource",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:DescribeImages",
+      ]
+      resources = var.ecr_repository_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageLambdaLogGroups"
+      effect = "Allow"
+      actions = [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsForResource",
+      ]
+      resources = ["arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "DescribeLambdaLogGroups"
+      effect    = "Allow"
+      actions   = ["logs:DescribeLogGroups"]
+      resources = ["*"]
+    }
+  }
+
+  # The apply role only has /dejavu/<env>/* today; the NAT instance's AMI
+  # comes from AWS's own public parameter namespace.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "ReadPublicAmiParameter"
+      effect    = "Allow"
+      actions   = ["ssm:GetParameter"]
+      resources = ["arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"]
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "apply" {
@@ -281,15 +619,67 @@ resource "aws_iam_role_policy" "apply" {
 # every Allow in IAM evaluation, which is what makes this a ceiling rather than
 # a suggestion.
 data "aws_iam_policy_document" "apply_boundary_deny" {
-  statement {
-    sid    = "NoIdentityManagement"
-    effect = "Deny"
-    actions = [
-      "iam:*",
-      "organizations:*",
-      "account:*",
-    ]
-    resources = ["*"]
+  # Phase 5 shape: no IAM access at all. Unchanged for any role where
+  # enable_workload_infrastructure is false (prod, until Phase 7).
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [] : [1]
+    content {
+      sid    = "NoIdentityManagement"
+      effect = "Deny"
+      actions = [
+        "iam:*",
+        "organizations:*",
+        "account:*",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  # Phase 6 shape: IAM is denied everywhere except the one named workload
+  # role, and even there only Get*/List* and PassRole survive - every
+  # mutating action on that role is denied by the second statement below. IAM
+  # can't subtract actions from inside one statement, hence two Denies. The
+  # net effect is read + PassRole on one role, and nothing else in IAM.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid           = "NoIdentityManagementExceptWorkloadRole"
+      effect        = "Deny"
+      actions       = ["iam:*"]
+      not_resources = [var.workload_role_arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "NoOrgOrAccountManagement"
+      effect = "Deny"
+      actions = [
+        "organizations:*",
+        "account:*",
+      ]
+      resources = ["*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "NoMutatingWorkloadRoleManagement"
+      effect = "Deny"
+      actions = [
+        "iam:Create*",
+        "iam:Delete*",
+        "iam:Put*",
+        "iam:Attach*",
+        "iam:Detach*",
+        "iam:Update*",
+        "iam:Tag*",
+        "iam:Untag*",
+      ]
+      resources = [var.workload_role_arn]
+    }
   }
 }
 

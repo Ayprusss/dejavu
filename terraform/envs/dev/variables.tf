@@ -12,6 +12,17 @@ variable "budget_limit_usd" {
   default = "5"
 }
 
+variable "initial_image_tag" {
+  description = <<-DESC
+    Tag of the images pushed to ECR before the first apply (6.7 step 2).
+    Gives the Lambda functions a valid image_uri on creation only - every
+    apply after that ignores the argument (D5). Defaults to "bootstrap", the
+    fixed tag pushed once by hand - CI's automated apply passes nothing here.
+  DESC
+  type        = string
+  default     = "bootstrap"
+}
+
 variable "budget_notification_email" {
   description = <<-DESC
     Where budget alerts go.

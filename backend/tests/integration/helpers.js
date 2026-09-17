@@ -4,7 +4,7 @@
  */
 
 const request = require('supertest');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const pool = require('../../src/db/pool');
 const stripe = require('../../src/stripe');
 const app = require('../../src/app');
