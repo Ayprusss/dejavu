@@ -59,11 +59,19 @@ them before Phase 7 builds on top of them.
       admin. 6.12 fixed the images that blocked it. This is the manual version
       of the E2E test Phase 4 deferred, and the drill in 7.10 needs a known-good
       baseline to compare against.
-- [ ] **Phase 3's frontend follow-up:** `App.jsx` should generate an
+- [x] **Phase 3's frontend follow-up:** `App.jsx` should generate an
       `idempotencyKey` once per checkout attempt and reuse it across retries
       (`grep idempotencyKey dejavu/src` finds nothing today). It's small and
       needs no AWS. Do it now or record it in 7.12's deferred list, but don't
       forget it.
+      Done: the actual `/api/checkout` call lives in `Cart.jsx`, not
+      `App.jsx`, so the key lives there. `dejavu/src/lib/checkoutAttempt.js`
+      holds the pure reuse/rotation logic (`getCheckoutAttempt`,
+      `cartAttemptSignature`) and `Cart.jsx` keeps the current attempt in a
+      ref: same key on a retry (double-click, or clicking again after a
+      network error with the cart unchanged), a fresh key once the cart's
+      signature changes or once a checkout redirects to Stripe. Covered by
+      `dejavu/tests/checkoutAttempt.test.js`.
 - [ ] Execution plan's Verification table: rows 3 and 4 were never marked
       `[x]`, though both phases are done. Fix that in 7.11.
 
