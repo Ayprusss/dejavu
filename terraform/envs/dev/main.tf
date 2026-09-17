@@ -95,7 +95,9 @@ module "rds" {
 module "observability" {
   source = "../../modules/observability"
 
-  environment = var.environment
+  environment   = var.environment
+  enable_alarms = var.enable_alarms
+  alarm_email   = var.alarm_email
 }
 
 module "lambda" {
