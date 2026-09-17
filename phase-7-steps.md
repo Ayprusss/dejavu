@@ -582,8 +582,15 @@ schema**. Rolling back the code doesn't roll back the schema.
       environment and logged as `admin.granted`. Register through the real
       prod frontend, grant, then create the two products through the admin UI
       or API. That exercises the real write path instead of a truncating seed.
-    - Unit-test the action's refusals (unknown email → error, not a silent
-      no-op) beside `tests/migrator.test.js`.
+      — Code done: `migrator.js` exports and routes `grant-admin`
+      (`src/migrator.js`), `userRepo.setAdminById` (`src/repositories/userRepo.js`).
+      Still open: the manual prod bootstrap (register via the real prod
+      frontend, invoke grant-admin, create the two products) is not part of
+      this file scope.
+    - [x] Unit-test the action's refusals (unknown email → error, not a silent
+      no-op) beside `tests/migrator.test.js`. Also added an integration test
+      (`tests/integration/migrator.test.js`) against real Postgres for the
+      write path itself.
     - *Considered and rejected:* letting `seed` run in prod behind a
       confirmation flag. It still truncates, and one misread payload would
       wipe prod's orders.
