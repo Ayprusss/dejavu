@@ -44,3 +44,19 @@ variable "workload_environments" {
   }))
   default = {}
 }
+
+variable "deploy_environments" {
+  description = <<-DESC
+    One entry per environment that gets a dedicated deploy role (7.3, D8),
+    assumed by deploy.yml's jobs - separate from the Terraform apply role in
+    modules/iam-oidc, because deploys happen on every merge and applies
+    happen rarely. The map key is the environment name (dev, prod);
+    github_environment is the GitHub Environment name that must appear in the
+    OIDC token's `sub` claim (dev, production - matching the AWS environment
+    name only for dev).
+  DESC
+  type = map(object({
+    github_environment = string
+  }))
+  default = {}
+}
