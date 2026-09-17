@@ -79,8 +79,9 @@ jobs:
       SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ env.SHA }}
+        # No `ref:` on purpose. The deploy *logic* comes from the workflow's
+        # own commit (main); only the *image* comes from $SHA. A rollback or
+        # the 7.10 drill targets SHAs whose tree may predate scripts/deploy/.
 
       # No access keys - this exchanges the job OIDC token for credentials
       # that expire in an hour, the same pattern terraform.yml and
@@ -160,13 +161,15 @@ jobs:
     #   - D9 runtime skip (dev destroyed): result == 'success',
     #     outputs.skipped == 'true' -> blocked.
     #   - a real dev failure: result == 'failure' -> blocked.
+    # On workflow_run, dev must have actually *succeeded*: if CI itself failed,
+    # deploy-dev is job-level skipped too, and "skipped" must not read as
+    # "allowed through" there, or a red CI run would queue a prod approval.
     if: >-
       always() &&
-      (github.event_name == 'workflow_run' ||
-       (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')) &&
-      needs.deploy-dev.result != 'failure' &&
-      needs.deploy-dev.result != 'cancelled' &&
-      needs.deploy-dev.outputs.skipped != 'true'
+      ((github.event_name == 'workflow_run' &&
+        needs.deploy-dev.result == 'success' &&
+        needs.deploy-dev.outputs.skipped != 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'))
     runs-on: ubuntu-latest
     # The protected one. A required reviewer here is the only thing standing
     # between this job and prod, because the OIDC token does not carry
@@ -183,8 +186,9 @@ jobs:
       SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          ref: ${{ env.SHA }}
+        # No `ref:` on purpose. The deploy *logic* comes from the workflow's
+        # own commit (main); only the *image* comes from $SHA. A rollback or
+        # the 7.10 drill targets SHAs whose tree may predate scripts/deploy/.
 
       - name: Assume the prod deploy role
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1

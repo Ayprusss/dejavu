@@ -26,7 +26,7 @@ the smoke test fails → the alias reverts on its own → an alarm fires.
 | 7.2 | Lambda aliases + Function URL on the alias (dev) | $0 (URL changes) | [ ] |
 | 7.3 | Deploy role in bootstrap (human-applied) | $0 | [ ] |
 | 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [ ] |
-| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [x] |
+| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [~] code done; unverified on GitHub |
 | 7.6 | Expand/contract: written rule + CI guard | $0 | [ ] |
 | 7.7 | Alarms + SNS (`modules/observability`) | ~$0 | [ ] |
 | 7.8 | Stand up prod (`envs/prod`) | **prod billing starts** | [ ] |
