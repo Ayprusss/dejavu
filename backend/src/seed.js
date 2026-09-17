@@ -27,7 +27,8 @@ const env = require('./config/env');
 // server, so it overrides via SEED_IMAGE_BASE_URL (falling back to
 // FRONTEND_URL) — otherwise the storefront would render localhost image URLs.
 const BASE_IMG_URL =
-  process.env.SEED_IMAGE_BASE_URL || `${env.FRONTEND_URL || 'http://localhost:5173'}/images/`;
+  process.env.SEED_IMAGE_BASE_URL ||
+  `${env.FRONTEND_URL || 'http://localhost:5173'}/images/`;
 
 // Generate fixed UUIDs so foreign keys are easy to map in the seed script
 const userId = uuidv4();

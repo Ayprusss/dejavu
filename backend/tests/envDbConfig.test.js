@@ -27,7 +27,8 @@ describe('config/env database configuration', () => {
     delete process.env.DATABASE_URL;
     process.env.DB_HOST = 'db.example.com';
     process.env.DB_NAME = 'dejavu';
-    process.env.DB_SECRET_ARN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:x';
+    process.env.DB_SECRET_ARN =
+      'arn:aws:secretsmanager:us-east-1:123456789012:secret:x';
 
     expect(() => loadEnv()).not.toThrow();
   });

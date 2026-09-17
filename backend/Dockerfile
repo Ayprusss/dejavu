@@ -19,6 +19,16 @@ RUN npm ci --omit=dev
 # --- api ---------------------------------------------------------------
 FROM node:22-bookworm-slim AS api
 
+# Same pattern as the migrator's `dnf update` below: this base image tag
+# ships libpcre2-8-0 10.42-1, which has two HIGH CVEs (CVE-2026-86145,
+# CVE-2026-89161) whose fix, 10.42-1+deb12u1, is already in Debian's
+# security repo but not yet in the image. Found by the PR's Trivy gate, not
+# a local scan. Upgrading exactly that package picks up the fix without an
+# open-ended `apt-get upgrade`.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Pinned to an exact tag, never :latest — see CLAUDE.md on third-party image
 # trust. Multi-arch (x86_64 and arm64); Docker resolves the right layer for
 # --platform linux/arm64 automatically.

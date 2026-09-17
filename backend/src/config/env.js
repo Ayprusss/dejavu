@@ -46,7 +46,9 @@ if (presentDbVars.length > 0 && !hasDiscreteDbConfig) {
 
 const dbPort = Number(process.env.DB_PORT ?? 5432);
 if (!Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535) {
-  problems.push(`DB_PORT must be an integer between 1 and 65535 (got "${process.env.DB_PORT}")`);
+  problems.push(
+    `DB_PORT must be an integer between 1 and 65535 (got "${process.env.DB_PORT}")`,
+  );
 }
 
 // A short secret is as good as no secret: it signs admin tokens.
