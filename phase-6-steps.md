@@ -32,7 +32,7 @@ restored from PITR once and the steps are written down.
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [x] |
 | 6.10 | Secret rotation actually exercised | | [x] |
 | 6.11 | PITR restore drill, written down | | [x] |
-| 6.12 | Destroy → re-apply drill, cost check | | [ ] |
+| 6.12 | Destroy → re-apply drill, cost check | | [x] (48h cost recheck owed) |
 | 6.13 | Docs, execution plan, merge | | [ ] |
 
 ---
@@ -940,10 +940,13 @@ settled before anything else is built on top.
       returned 204 with the right `access-control-allow-origin` - Express is
       answering every preflight this frontend will send.
     - **Found, out of scope to fix here:** the actual "add to cart, click
-      checkout" click-through is currently blocked by a pre-existing,
-      unrelated frontend bug - product images are hardcoded to
-      `dejavustudio.xyz/images/...` (a different, seemingly stale domain)
-      and 404, and the add-to-cart control never renders as a result
+      checkout" click-through is currently blocked because product images
+      point at `dejavustudio.xyz/images/...` and 404, and the add-to-cart
+      control never renders as a result. **Correction (6.12):** not a
+      frontend hardcode. The URLs are seed data, written by the migrator,
+      which had no `FRONTEND_URL` and fell back to `env.js`'s default. Fixed
+      in 6.12 (`modules/lambda` shared environment) and re-seeded; images
+      load. Original note, for the record: "a pre-existing frontend bug"
       (confirmed via the accessibility tree: no add-to-cart button exists in
       the DOM anywhere on the product page, despite the product data itself
       loading correctly). This is a frontend asset/data issue, not a
@@ -1090,19 +1093,91 @@ the database to a point in time"; this section keeps only the checkboxes.
 The plan's cost story is "`destroy` after a demo, `apply` before an
 interview". Prove that loop works before relying on it.
 
-- [ ] `terraform destroy` on `envs/dev` (compute and data only; bootstrap and
+Done 2026-09-16/17. The runbook is in `terraform/README.md` → "Tearing dev
+down and bringing it back". As in 6.10/6.11, every live-infrastructure
+command was run by hand from a prepared script (the agent's classifier blocks
+destroy, apply, Stripe endpoint changes and Vercel production deploys), and
+the agent read the logs back and verified.
+
+- [x] `terraform destroy` on `envs/dev` (compute and data only; bootstrap and
       ECR stay). **Expect the subnets and SGs to hang for 20–40 minutes** on
       Lambda's ENIs (correction 10). Record the wall time.
-- [ ] Decide what survives. SSM parameters are free, and re-creating them
-      means re-entering every secret, so consider moving them into their own
-      config or state so a destroy of `envs/dev` leaves them alone.
-- [ ] `apply` again → migrate → seed → smoke test. Time the whole loop from
+    - **20 min 23 s** (23:36:39 → 23:57:02Z), 28 resources. Lambda
+      functions 6 s, RDS 1m51s, NAT 40 s; then the Hyperplane ENIs:
+      private subnets ~18 min, the `lambda` SG **20m05s**. Correction 10's
+      estimate held, at its low end.
+    - Afterwards: no VPC, ENI, RDS instance, function, log group or public
+      IP left (NAT listed as `terminated`, which is how EC2 shows a deleted
+      instance for a while).
+- [x] Decide what survives. — **SSM parameters and the budget.** Not a
+      separate state: `-target=module.lambda -target=module.rds
+      -target=module.network -target=module.observability` on the destroy,
+      plus `prevent_destroy = true` on `modules/secrets`' parameters, so an
+      untargeted `terraform destroy` now **fails** instead of taking the real
+      values with it (verified: plain `plan -destroy` errors; targeted plan =
+      28 to destroy, 4 kept). A split state would be cleaner at more
+      environments; at one, it's a new directory, backend key and CI job
+      for four resources. All three parameters kept their real values
+      through the loop (checked, not assumed).
+- [x] `apply` again → migrate → seed → smoke test. Time the whole loop from
       zero to a verified webhook. That number goes in the README.
-- [ ] Cheaper middle ground to document: **stop** RDS (auto-restarts after 7
+    - **~13 min 11 s from zero to a verified webhook**: 12m50s from
+      `terraform apply` to four passing smoke checks, plus 21 s for the
+      webhook stage. The first script aborted in between on its own bug
+      (it captured the Stripe CLI's stderr banner into the JSON it then
+      parsed), and that 17-minute pause isn't counted.
+    - Apply 12m30s (28 added): **RDS 8m32s**, then both functions **3m44s**
+      each (VPC Lambdas wait for their ENIs on create too), NAT 14 s.
+    - Migrate: all 7 migrations. Seed. `/api/status`, `/api/ready`,
+      `/api/version` (`57c6892`), `/api/products` all 200. Real
+      `stripe trigger checkout.session.completed` → one `order.created`, no
+      `webhook.signature_invalid`.
+    - **Three things the loop has to redo that a plain `apply` doesn't:**
+      1. **The Function URL changes** (`mbjiendiy…` → `bcswopais…`): the ID is
+         generated per function. The Stripe endpoint's URL was updated in
+         place (`webhook_endpoints update`, which keeps its signing secret,
+         so SSM didn't change), and Vercel's `VITE_API_URL` was reset and
+         the site redeployed; the new bundle has only the new URL. A stable
+         domain in front (CloudFront or a custom domain) would remove both
+         steps; noted for "what I'd do differently".
+      2. **The image tag.** `initial_image_tag` defaults to `bootstrap`, which
+         predates the 6.7 migrator SSM fix and 6.9's `clientIp` fix. Re-apply
+         with `-var initial_image_tag=4100dc8` (present in both repos), then
+         `update-function-code` the api to `57c6892`, the live pair
+         before the destroy. CI's apply passes no tag, so **a CI-driven
+         re-create would bring back the stale image**. Phase 7's pipeline
+         deploy has to follow any re-create.
+      3. **The Stripe CLI key expires** (~90 days) and is needed for the
+         trigger; `stripe login` again, in the **same** test environment that
+         has the endpoint (a second, older Render endpoint in that account is
+         untouched and ignored by the script).
+    - **Found by looking at the result, not in the plan:** product images
+      still didn't load. Traced to the **migrator lacking `FRONTEND_URL`**:
+      only the api function had it, so `seed` fell back to `env.js`'s
+      `https://dejavustudio.xyz` default and wrote image URLs that 404.
+      That is the real cause of the "no images" 6.9 recorded (6.9 blamed a
+      hardcoded frontend domain; corrected there). Moved `FRONTEND_URL` into
+      `modules/lambda`'s shared environment (plan: exactly one in-place
+      change on the migrator), applied, re-seeded: all 7 image URLs now 200
+      from `dejavu-seven.vercel.app/images/…`, and the shop shows them.
+- [x] Cheaper middle ground to document: **stop** RDS (auto-restarts after 7
       days) and the NAT instance, and storage is the only cost. Note the
-      auto-restart.
+      auto-restart. — Written up in the README, **not drilled**. The catches
+      worth knowing: RDS starts itself again after 7 days and starts billing
+      without telling you; the NAT's auto-assigned public IP is released on
+      stop and a new one comes on start (nothing depends on it); and while
+      the NAT is stopped, **every Lambda cold start fails**, because the SSM
+      fetch has no route out (no VPC endpoints, 6.6). Stopping the NAT and not
+      RDS saves little and breaks the API.
 - [ ] Check Cost Explorer after ~48h against the table below, and correct the
-      table with real numbers.
+      table with real numbers. — **Partly done; the 48h check is still
+      owed.** What's already known: this account is on the AWS **Free plan**
+      (`freetier get-account-plan-state`: `FREE`, `ACTIVE`, $159.59 credits
+      remaining). Month-to-date usage was **$0.41**, fully offset by credits,
+      and the RDS, NAT and public IPv4 hours all bill at $0 under the free
+      tier. The table below is corrected to list prices and the NAT's real
+      `t4g.micro` size (6.7); re-check once a full two days are in Cost
+      Explorer.
 
 ---
 
@@ -1142,7 +1217,7 @@ interview". Prove that loop works before relying on it.
 - [ ] Trivy gates every PR on HIGH/CRITICAL.
 - [x] PITR restore performed once, steps written down (6.11).
 - [ ] Cold start and login latency measured and quoted (6.9).
-- [ ] `destroy` → `apply` round trip done and timed (6.12).
+- [x] `destroy` → `apply` round trip done and timed (6.12).
 
 ---
 
@@ -1156,16 +1231,24 @@ accounts created after July 2025.
 |---|---|
 | RDS `db.t4g.micro`, single-AZ | ~$11.70 |
 | RDS 20 GB gp3 + backups (≤ DB size free) | ~$2.30 |
-| NAT instance `t4g.nano` | ~$3.05 |
+| NAT instance **`t4g.micro`** (6.7: `t4g.nano` isn't free-tier eligible here) | ~$6.15 |
 | NAT public IPv4 ($0.005/hr) | ~$3.65 |
 | NAT 8 GB gp3 root volume | ~$0.65 |
 | Secrets Manager, 1 secret | $0.40 |
 | ECR storage (~15 images) | ~$0.20 |
 | Lambda + CloudWatch Logs at this traffic | ~$0–1 |
-| **Total** | **~$22–23** (~$0.75/day) |
+| **Total at list price** | **~$25–26** (~$0.85/day) |
 
-With both RDS and the NAT stopped, storage and snapshots only: ~$3/month.
-Fully destroyed (bootstrap + ECR + SSM kept): ~$0.20/month.
+**What this account actually pays (6.12):** it is on the AWS Free plan, and
+Cost Explorer bills the RDS instance hours, the NAT instance hours and the
+public IPv4 at **$0** under the free tier. Month-to-date usage was $0.41,
+fully offset by credits ($159.59 remaining). The list-price table is what a
+paid account, or this one after the free plan ends, would see. The 48 h
+Cost Explorer re-check is still owed.
+
+With both RDS and the NAT stopped, storage and snapshots only: ~$3/month
+(RDS restarts itself after 7 days). Fully destroyed (bootstrap + ECR + SSM
+kept): ~$0.20/month.
 
 ---
 

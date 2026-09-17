@@ -260,6 +260,85 @@ Neither was drilled.
   auto-mode classifier blocks changes to the live function's configuration,
   as it should.
 
+## Tearing dev down and bringing it back (drilled in 6.12)
+
+The cost story is "destroy after a demo, apply before an interview". Done
+once on 2026-09-16/17; the numbers below are real.
+
+### Destroy (~20 min)
+
+```bash
+cd terraform/envs/dev
+export TF_VAR_budget_notification_email=...   # same value CI uses
+terraform destroy \
+  -target=module.lambda -target=module.rds \
+  -target=module.network -target=module.observability
+```
+
+- **Always targeted.** It removes 28 resources and keeps the three SSM
+  parameters (their real values) and the budget. A plain `terraform destroy`
+  is refused on purpose: `modules/secrets` sets `prevent_destroy`, because
+  destroying the parameters would lose every secret and the next apply would
+  only bring back placeholders.
+- **20 min 23 s**, and nearly all of it is waiting. The functions go in 6 s,
+  RDS in ~2 min, the NAT in 40 s; then the private subnets (~18 min) and the
+  `lambda` security group (**20 min**) wait for Lambda's Hyperplane ENIs to
+  be released. Don't cancel it.
+- Log groups go with it, so earlier Lambda logs are gone.
+
+### Re-apply (~13 min to a verified webhook)
+
+```bash
+terraform apply -var initial_image_tag=<migrator tag live before the destroy>
+aws lambda update-function-code --function-name dejavu-dev-api \
+  --image-uri <ecr>/dejavu-api:<api tag live before the destroy>
+aws lambda invoke --function-name dejavu-dev-migrator \
+  --cli-binary-format raw-in-base64-out --payload '{"action":"up"}' out.json
+aws lambda invoke --function-name dejavu-dev-migrator \
+  --cli-binary-format raw-in-base64-out --payload '{"action":"seed"}' out.json
+# smoke: /api/status /api/ready /api/version /api/products
+```
+
+- **Pass the image tag.** The default, `bootstrap`, is the first image ever
+  pushed and predates later fixes. Terraform only uses the tag on create
+  (D5), so record the live tags (`aws lambda get-function --query
+  Code.ImageUri`) **before** destroying. CI's apply passes no tag, so a
+  re-create driven from CI comes back on `bootstrap`.
+- **Timings:** apply 12m30s (RDS 8m32s; both functions 3m44s, since VPC
+  functions wait for their ENIs on create too); code deploy, migrate, seed
+  and smoke ~20 s. With the webhook stage below: **~13 min 11 s** from zero
+  to a verified webhook.
+
+**The Function URL changes on every re-create**, so two things outside AWS
+have to follow it:
+
+1. **Stripe:** update the existing endpoint's URL instead of creating a new
+   one. That keeps its signing secret, so `STRIPE_WEBHOOK_SECRET` in SSM
+   stays valid:
+   ```bash
+   stripe webhook_endpoints update <we_…> --url <new url>/api/webhooks/stripe
+   stripe trigger checkout.session.completed   # expect order.created, no signature_invalid
+   ```
+   The CLI's key expires; `stripe login` into the same test environment
+   first. (It prints a "Running in …" banner on **stderr**, so don't
+   capture `2>&1` into anything you parse as JSON.)
+2. **Vercel:** reset `VITE_API_URL` for production to the new URL (no
+   trailing slash; it's inlined at build time), then `vercel --prod`.
+
+A stable hostname in front of the function (CloudFront or a custom domain)
+would make both of those unnecessary.
+
+### Stopping instead of destroying (documented, not drilled)
+
+Stopping RDS (`aws rds stop-db-instance`) and the NAT instance (`aws ec2
+stop-instances`) leaves only storage billing (~$3/month) and avoids the
+20-minute destroy and the URL change. Two catches:
+
+- **RDS starts itself again after 7 days** and resumes billing silently.
+- **With the NAT stopped, every Lambda cold start fails.** The SSM fetch at
+  boot has no route out (no VPC endpoints). Stop both or neither. The NAT's
+  auto-assigned public IP changes on restart; nothing depends on it.
+
 ## The dependency nobody writes down
 
 Environment protection rules are **free on public repositories** and a **paid
