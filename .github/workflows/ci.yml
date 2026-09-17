@@ -205,7 +205,12 @@ jobs:
       DATABASE_URL: postgres://dejavu:dejavu@localhost:5432/dejavu
 
     steps:
+      # fetch-depth: 0 (not the default shallow clone) so migration-safety,
+      # below, has the PR's base commit / pre-push commit available to diff
+      # against.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -214,6 +219,33 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       - run: npm ci
+
+      # 7.6: expand/contract guard. A PR diffs against its base commit; a
+      # push to main diffs against the commit it replaced. `before` is all
+      # zeros when there's no such commit (a brand-new ref, or the repo's
+      # first commit) - there's nothing to compare against, so fall back to
+      # HEAD's parent, or skip if HEAD has none either.
+      - name: Determine base commit for migration-safety
+        id: migration-safety-base
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+          else
+            base="${{ github.event.before }}"
+            if [[ "$base" =~ ^0+$ ]]; then
+              if git rev-parse --quiet --verify HEAD^ >/dev/null; then
+                base="$(git rev-parse HEAD^)"
+              else
+                echo "::notice::No base commit to diff against (first commit in the repo) - skipping migration-safety"
+                base=""
+              fi
+            fi
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Migration safety (expand/contract guard)
+        if: steps.migration-safety-base.outputs.sha != ''
+        run: bash scripts/check-migration-safety.sh "${{ steps.migration-safety-base.outputs.sha }}"
 
       - name: Migrate up
         run: npx node-pg-migrate up

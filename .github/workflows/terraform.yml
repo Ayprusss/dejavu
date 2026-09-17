@@ -103,6 +103,7 @@ jobs:
         working-directory: terraform/envs/${{ matrix.environment }}
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           set +e
           terraform plan -no-color -input=false -out=tfplan > plan.txt 2>&1
@@ -172,6 +173,15 @@ jobs:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     runs-on: ubuntu-latest
     environment: dev
+    # Correction 4 / 7.5: deploy.yml's deploy-dev job can be updating this
+    # same Lambda's code at the moment a terraform-touching PR merges. Lambda
+    # refuses a code update while a config update is in progress
+    # (ResourceConflictException), so both workflows queue on one shared
+    # group per environment instead of racing. Job-level, not
+    # workflow-level, so a prod approval waiting for hours doesn't block dev.
+    concurrency:
+      group: dejavu-deploy-dev
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -195,11 +205,79 @@ jobs:
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
-      - name: terraform apply
+      # -detailed-exitcode is the robust way to know whether apply changed
+      # anything: 0 = no changes, 1 = error, 2 = changes present (correction
+      # 2 needs this to decide whether a republish is even necessary).
+      # Applying the saved plan file, rather than letting `apply` re-plan
+      # inline, also means what gets applied is exactly what was evaluated
+      # here, not a second, possibly different, plan.
+      - name: terraform plan
+        id: plan
         working-directory: terraform/envs/dev
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
-        run: terraform apply -auto-approve -input=false
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
+        run: |
+          set +e
+          terraform plan -input=false -detailed-exitcode -out=tfplan
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: terraform apply
+        if: steps.plan.outputs.exitcode == '2'
+        working-directory: terraform/envs/dev
+        run: terraform apply -auto-approve -input=false tfplan
+
+      # Correction 2: a published Lambda version freezes its environment
+      # variables. A config-only apply (e.g. CORS_ORIGINS, FRONTEND_URL)
+      # lands on $LATEST immediately, but the `live` alias keeps running the
+      # old copy until something publishes a new version. Republish the SHA
+      # already running - same image, no code change - so the new config
+      # reaches real traffic now instead of waiting for the next deploy.
+      # Skipped entirely when the plan reported no changes.
+      - name: Read the live SHA to republish
+        id: live_sha
+        if: steps.plan.outputs.exitcode == '2'
+        working-directory: terraform/envs/dev
+        run: |
+          set -euo pipefail
+          url=$(terraform output -raw api_function_url 2>/dev/null || true)
+          if [ -z "$url" ]; then
+            echo "::notice::No api_function_url output yet for dev - nothing to republish"
+            exit 0
+          fi
+          sha=$(curl -fsS --max-time 10 "${url%/}/api/version" | jq -r '.sha // empty')
+          if [ -z "$sha" ]; then
+            echo "::error::Could not read a SHA from ${url}api/version"
+            exit 1
+          fi
+          echo "Live SHA per /api/version: $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # The apply role above is scoped to Terraform's own actions and does
+      # not carry UpdateFunctionCode/PublishVersion/UpdateAlias - 7.3's
+      # deploy role owns those on purpose (applies are rare, deploys happen
+      # on every merge). Assume the deploy role only for this last step, so
+      # this job never holds both sets of permissions at once.
+      - name: Assume the dev deploy role to republish
+        if: steps.plan.outputs.exitcode == '2' && steps.live_sha.outputs.sha != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: dejavu-tf-republish-dev-${{ github.run_id }}
+
+      - name: Republish the live SHA
+        if: steps.plan.outputs.exitcode == '2' && steps.live_sha.outputs.sha != ''
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_API_REPO: ${{ vars.ECR_API_REPO }}
+          ECR_MIGRATOR_REPO: ${{ vars.ECR_MIGRATOR_REPO }}
+        run: scripts/deploy/deploy.sh dev "${{ steps.live_sha.outputs.sha }}"
 
   apply-prod:
     needs: validate
@@ -211,6 +289,12 @@ jobs:
     # carry environment:production until that approval is given.
     environment: production
 
+    # Same shared-group reasoning as apply-dev: deploy.yml's deploy-prod job
+    # and this job both touch dejavu-prod-api, so they queue instead of
+    # racing (correction 4).
+    concurrency:
+      group: dejavu-deploy-prod
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -234,8 +318,62 @@ jobs:
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="region=${{ vars.AWS_REGION }}"
 
-      - name: terraform apply
+      # See apply-dev for why -detailed-exitcode and applying a saved plan.
+      - name: terraform plan
+        id: plan
         working-directory: terraform/envs/prod
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
-        run: terraform apply -auto-approve -input=false
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
+        run: |
+          set +e
+          terraform plan -input=false -detailed-exitcode -out=tfplan
+          code=$?
+          set -e
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: terraform apply
+        if: steps.plan.outputs.exitcode == '2'
+        working-directory: terraform/envs/prod
+        run: terraform apply -auto-approve -input=false tfplan
+
+      # Correction 2 - see apply-dev. Same republish, prod's alias.
+      - name: Read the live SHA to republish
+        id: live_sha
+        if: steps.plan.outputs.exitcode == '2'
+        working-directory: terraform/envs/prod
+        run: |
+          set -euo pipefail
+          url=$(terraform output -raw api_function_url 2>/dev/null || true)
+          if [ -z "$url" ]; then
+            echo "::notice::No api_function_url output yet for prod - nothing to republish"
+            exit 0
+          fi
+          sha=$(curl -fsS --max-time 10 "${url%/}/api/version" | jq -r '.sha // empty')
+          if [ -z "$sha" ]; then
+            echo "::error::Could not read a SHA from ${url}api/version"
+            exit 1
+          fi
+          echo "Live SHA per /api/version: $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # The prod apply role does not carry deploy permissions either (see
+      # apply-dev) - assume the prod deploy role only for this last step.
+      - name: Assume the prod deploy role to republish
+        if: steps.plan.outputs.exitcode == '2' && steps.live_sha.outputs.sha != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: dejavu-tf-republish-prod-${{ github.run_id }}
+
+      - name: Republish the live SHA
+        if: steps.plan.outputs.exitcode == '2' && steps.live_sha.outputs.sha != ''
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_API_REPO: ${{ vars.ECR_API_REPO }}
+          ECR_MIGRATOR_REPO: ${{ vars.ECR_MIGRATOR_REPO }}
+        run: scripts/deploy/deploy.sh prod "${{ steps.live_sha.outputs.sha }}"

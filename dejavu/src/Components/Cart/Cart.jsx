@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../../config/api';
 import { cartSubtotal } from '../../lib/cart';
+import { getCheckoutAttempt } from '../../lib/checkoutAttempt';
 import './Cart.css';
 
 function formatPrice(value) {
@@ -35,6 +36,7 @@ function Cart({
   const [subtotalTick, setSubtotalTick] = useState(0);
   const [prevItemCount, setPrevItemCount] = useState(itemCount);
   const removeTimeoutsRef = useRef({});
+  const checkoutAttemptRef = useRef(null);
 
   // Adjust state during render when props change (avoids effect-driven cascades)
   if (isOpen && !isMounted) {
@@ -117,6 +119,13 @@ function Cart({
   const isCheckoutDisabled = !hasItems || isSubtotalLoading;
 
   const handleCheckout = async () => {
+    // Reuses the same key for a retry of this attempt (double-click, or a
+    // network error followed by clicking again with the cart unchanged);
+    // rotates to a new one once the cart changes. See lib/checkoutAttempt.js
+    // for why the key is generated here rather than by the server.
+    checkoutAttemptRef.current = getCheckoutAttempt(checkoutAttemptRef.current, items);
+    const { key: idempotencyKey } = checkoutAttemptRef.current;
+
     try {
       const response = await fetch(`${API_URL}/api/checkout`, {
         method: 'POST',
@@ -126,6 +135,7 @@ function Cart({
             variantId: item.variantId,
             quantity: item.quantity,
           })),
+          idempotencyKey,
         }),
       });
 
@@ -137,6 +147,9 @@ function Cart({
       }
 
       if (data.checkoutUrl) {
+        // This attempt is complete; the next one (a new cart, after this
+        // session either finishes or is abandoned) gets a fresh key.
+        checkoutAttemptRef.current = null;
         window.location.assign(data.checkoutUrl);
       }
     } catch (error) {

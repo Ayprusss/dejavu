@@ -91,6 +91,16 @@ terraform init -backend-config=backend.hcl
 TF_VAR_budget_notification_email=you@example.com terraform plan
 ```
 
+**7.3 added four new bootstrap outputs**, also set as GitHub repository
+variables once bootstrap is applied: `deploy_role_arn_dev` /
+`deploy_role_arn_prod` → `AWS_DEPLOY_ROLE_ARN_DEV` / `AWS_DEPLOY_ROLE_ARN_PROD`
+(assumed by `deploy.yml`, not `terraform.yml`), and `workload_role_arn_prod` →
+`AWS_WORKLOAD_ROLE_ARN_PROD` (consumed by `envs/prod`'s `modules/lambda`, the
+same way dev's already was). The deploy roles are separate from the
+plan/apply roles above them in this file — see
+`modules/workload-roles/main.tf`'s "Deploy roles" section and phase-7-steps.md
+7.3/D8 for why.
+
 ## Setting a secret's real value
 
 ```bash

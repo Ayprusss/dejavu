@@ -35,3 +35,14 @@ output "api_function_url" {
 output "migrator_function_name" {
   value = module.lambda.migrator_name
 }
+
+# 7.2: for verifying the alias by hand (`aws lambda get-alias`) without
+# guessing the name the pipeline scripts hardcode ("live", per the shared
+# interfaces list).
+output "api_alias_name" {
+  value = module.lambda.api_alias_name
+}
+
+output "api_alias_arn" {
+  value = module.lambda.api_alias_arn
+}

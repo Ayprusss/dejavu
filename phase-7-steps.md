@@ -26,8 +26,8 @@ the smoke test fails → the alias reverts on its own → an alarm fires.
 | 7.2 | Lambda aliases + Function URL on the alias (dev) | $0 (URL changes) | [ ] |
 | 7.3 | Deploy role in bootstrap (human-applied) | $0 | [ ] |
 | 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [ ] |
-| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [ ] |
-| 7.6 | Expand/contract: written rule + CI guard | $0 | [ ] |
+| 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [~] code done; unverified on GitHub |
+| 7.6 | Expand/contract: written rule + CI guard | $0 | [x] |
 | 7.7 | Alarms + SNS (`modules/observability`) | ~$0 | [ ] |
 | 7.8 | Stand up prod (`envs/prod`) | **prod billing starts** | [ ] |
 | 7.9 | Prod data, secrets, Stripe, frontend | | [ ] |
@@ -59,11 +59,19 @@ them before Phase 7 builds on top of them.
       admin. 6.12 fixed the images that blocked it. This is the manual version
       of the E2E test Phase 4 deferred, and the drill in 7.10 needs a known-good
       baseline to compare against.
-- [ ] **Phase 3's frontend follow-up:** `App.jsx` should generate an
+- [x] **Phase 3's frontend follow-up:** `App.jsx` should generate an
       `idempotencyKey` once per checkout attempt and reuse it across retries
       (`grep idempotencyKey dejavu/src` finds nothing today). It's small and
       needs no AWS. Do it now or record it in 7.12's deferred list, but don't
       forget it.
+      Done: the actual `/api/checkout` call lives in `Cart.jsx`, not
+      `App.jsx`, so the key lives there. `dejavu/src/lib/checkoutAttempt.js`
+      holds the pure reuse/rotation logic (`getCheckoutAttempt`,
+      `cartAttemptSignature`) and `Cart.jsx` keeps the current attempt in a
+      ref: same key on a retry (double-click, or clicking again after a
+      network error with the cart unchanged), a fresh key once the cart's
+      signature changes or once a checkout redirects to Stripe. Covered by
+      `dejavu/tests/checkoutAttempt.test.js`.
 - [ ] Execution plan's Verification table: rows 3 and 4 were never marked
       `[x]`, though both phases are done. Fix that in 7.11.
 
@@ -240,17 +248,28 @@ behind turned up these. Each one is handled in a step below.
 
 `modules/lambda`, applied to dev through the normal PR → `terraform.yml` path.
 
-- [ ] `aws_lambda_alias "api_live"`: `name = "live"`,
+- [x] `aws_lambda_alias "api_live"`: `name = "live"`,
       `function_version` = the function's current published version.
       **`lifecycle { ignore_changes = [function_version] }`**. Terraform
       creates the alias and the pipeline owns where it points (D5 from Phase 6,
       extended).
-    - **Verify, don't assume:** whether `CreateAlias` accepts `$LATEST`. If it
+    - [x] **Verify, don't assume:** whether `CreateAlias` accepts `$LATEST`. If it
       doesn't, set `publish = true` on the function so the first apply creates
       version 1 for the alias to reference, and keep `ignore_changes` on
       `image_uri`. Check `publish` doesn't make every later config-only apply
       publish a version. That would bypass the pipeline and the smoke test.
-- [ ] `aws_lambda_function_url.api`: add `qualifier = aws_lambda_alias.api_live.name`.
+      **Verified via docs (provider source + AWS API docs), not a live call:**
+      `function_version` accepts the literal `"$LATEST"` for a plain
+      (non-weighted) alias - the provider validates it against
+      `(\$LATEST|[0-9]+)`, and AWS's alias docs describe (while discouraging
+      long-term use of) exactly this. So `publish = true` isn't needed, which
+      also sidesteps the bypass risk: `publish`'s own description is "publish
+      creation/**change**", and env/memory edits go through
+      `UpdateFunctionConfiguration` the same as code - so `publish = true`
+      would have made Terraform publish an extra, unsmoked version on every
+      config-only apply. Used `function_version = "$LATEST"` instead; see the
+      comment above `aws_lambda_alias.api_live` in `modules/lambda/main.tf`.
+- [x] `aws_lambda_function_url.api`: add `qualifier = aws_lambda_alias.api_live.name`.
       `aws_lambda_permission.public_invoke`: add the same `qualifier`.
 - [ ] **Verify the Function URL's permission requirement against a real
       `curl`.** AWS has been tightening URL invoke permissions (both
@@ -258,19 +277,41 @@ behind turned up these. Each one is handled in a step below.
       policy for new URLs). A 403 from a correctly created URL looks exactly
       like a broken adapter. If a second permission statement is needed, add it
       with the same qualifier and write down why.
-- [ ] Migrator: **no alias.** It's invoked by the pipeline at `$LATEST`,
+      **Not verified live (no deployed infra available to this workstream).**
+      Docs research (docs.aws.amazon.com/lambda/latest/dg/urls-auth.html,
+      current as of this reading) is unambiguous that `NONE` auth now needs a
+      second statement: `lambda:InvokeFunction` gated on the
+      `InvokedViaFunctionUrl` condition key, on top of the existing
+      `lambda:InvokeFunctionUrl` statement - the note flags this as enforced
+      for new function URLs since October 2025, all URLs by November 2026.
+      Added `aws_lambda_permission.public_invoke_function` (qualified,
+      `invoked_via_function_url = true`) on that basis. **Still needs a real
+      `curl` against the deployed qualified URL** to confirm this is
+      sufficient and no third statement is needed - flagging per the task's
+      instructions, since that requires live AWS.
+- [x] Migrator: **no alias.** It's invoked by the pipeline at `$LATEST`,
       straight after its own `update-function-code`. It never takes public
-      traffic, so there's nothing to roll back to.
+      traffic, so there's nothing to roll back to. (No code change needed -
+      confirmed no alias resource exists for `aws_lambda_function.migrator`,
+      and added a comment saying so.)
 - [ ] Output `function_url` now reads the qualified URL. Update the Stripe
       endpoint in place (`webhook_endpoints update`, which keeps the signing
       secret, as in 6.12) and Vercel's `VITE_API_URL`, then redeploy the
       frontend.
+      **Terraform part done** (`function_url` output is now the qualified
+      alias URL by construction, since `aws_lambda_function_url.api` itself
+      carries the qualifier). **The Stripe/Vercel live updates are out of this
+      workstream's scope** (no Stripe/Vercel commands per the hard rules, and
+      they only make sense once this is actually applied) - flagging as not
+      done here.
 - [ ] Verify: `/api/version` through the new URL; `stripe trigger
       checkout.session.completed` → one `order.created`, no
       `webhook.signature_invalid`. The raw-body path now runs through an alias,
       and that's worth re-proving once rather than assuming.
+      **Not verified - needs live AWS + Stripe, out of scope here.**
 - [ ] Verify the old unqualified URL is gone (it should 404 or DNS-fail), so
       nothing can reach `$LATEST` from the internet.
+      **Not verified - needs live AWS, out of scope here.**
 
 ---
 
@@ -279,40 +320,66 @@ behind turned up these. Each one is handled in a step below.
 In `modules/workload-roles`, beside `dejavu-gha-push`. Applied by you with
 admin credentials, never by CI.
 
-- [ ] `dejavu-gha-deploy-dev`: trust `sub = repo:Ayprusss/dejavu:environment:dev`,
-      `aud = sts.amazonaws.com`.
-- [ ] `dejavu-gha-deploy-prod`: trust `sub = repo:Ayprusss/dejavu:environment:production`.
-- [ ] Permissions, scoped to `function:dejavu-<env>-api` and
+- [x] `dejavu-gha-deploy-dev`: trust `sub = repo:Ayprusss/dejavu:environment:dev`,
+      `aud = sts.amazonaws.com`. — `modules/workload-roles/main.tf`'s new
+      `deploy_trust`/`deploy` resources, `for_each` over a new
+      `deploy_environments` variable, wired from `bootstrap/main.tf`.
+- [x] `dejavu-gha-deploy-prod`: trust `sub = repo:Ayprusss/dejavu:environment:production`.
+      — same `for_each`, `deploy_environments.prod.github_environment = "production"`.
+- [x] Permissions, scoped to `function:dejavu-<env>-api` and
       `function:dejavu-<env>-migrator` (plus `:*` for qualified ARNs):
       `GetFunction`, `GetFunctionConfiguration`, `UpdateFunctionCode`,
       `PublishVersion`, `ListVersionsByFunction`, `DeleteFunction` (qualified
       ARNs only, for version pruning; condition it so it can't delete the
       unqualified function), `GetAlias`, `UpdateAlias`, and `InvokeFunction`
       on the **migrator only**.
-    - **Verify** the `DeleteFunction` scoping with a real `aws lambda
-      delete-function --function-name dejavu-dev-api` from the role. It must
-      be denied. If IAM can't separate the qualified and unqualified ARN
-      cleanly, drop pruning from the role and prune by hand instead.
-- [ ] ECR: `BatchGetImage`, `GetDownloadUrlForLayer`, `DescribeImages` on the
+    - **Researched, not live-verified:** a qualified Lambda ARN is the
+      unqualified one with a literal `:<version-or-alias>` appended, and
+      IAM's resource-pattern wildcard matches that trailing colon like any
+      other character. So `function:name:*` as a resource matches every
+      qualified ARN and provably none of the unqualified one — the pattern
+      requires the literal substring `function:name:` to appear, and the bare
+      ARN never contains that trailing colon. IAM *can* separate them
+      cleanly, with no condition key needed; documented in
+      `modules/workload-roles/main.tf`'s `deploy_function_arns` comment. Kept
+      pruning in the role on that basis, plus a belt-and-suspenders explicit
+      Deny on the two unqualified ARNs. **Still needs the plan's real
+      `aws lambda delete-function --function-name dejavu-dev-api` check
+      against a live role** — no AWS credentials in this session.
+- [x] ECR: `BatchGetImage`, `GetDownloadUrlForLayer`, `DescribeImages` on the
       two repos (`UpdateFunctionCode` for an image checks the caller's ECR
-      access too).
-- [ ] `sts:GetCallerIdentity`. Nothing else.
-- [ ] **Prod's workload role.** Add `prod = { rds_identifier = "dejavu-prod" }`
+      access too). — `deploy`'s `ReadEcrImages` statement.
+- [x] `sts:GetCallerIdentity`. Nothing else. — `deploy`'s `WhoAmI` statement.
+- [x] **Prod's workload role.** Add `prod = { rds_identifier = "dejavu-prod" }`
       to `workload_environments`, which creates `dejavu-prod-lambda` with SSM
       scoped to `/dejavu/prod/*` and Secrets Manager scoped by tag to
-      `db:dejavu-prod`.
-- [ ] **Prod's apply role.** `enable_workload_infrastructure = true`,
+      `db:dejavu-prod`. — added in `bootstrap/main.tf`'s `module.workload_roles`
+      call; the existing `for_each`-based resources in
+      `modules/workload-roles/main.tf` needed no changes to pick it up.
+- [x] **Prod's apply role.** `enable_workload_infrastructure = true`,
       `workload_role_arn` = prod's. Bring over every lesson from 6.7's eight
       rounds, so prod's first apply should need **zero** IAM iterations. If it
-      needs any, that's a finding: record it.
-- [ ] ECR repository policy: `aws:SourceArn` is already `function:dejavu-*`,
-      which covers prod. Confirm it; don't change it.
-- [ ] Outputs → GitHub variables: `AWS_DEPLOY_ROLE_ARN_DEV`,
-      `AWS_DEPLOY_ROLE_ARN_PROD`, `AWS_WORKLOAD_ROLE_ARN_PROD`.
+      needs any, that's a finding: record it. — set on `module.roles_prod` in
+      `bootstrap/main.tf`. Also added, gated on the same flag (so both dev and
+      prod's apply roles pick it up): the 7.2 alias/version Lambda actions and
+      the full 7.7 SNS/CloudWatch-alarm/log-metric-filter statement set, in
+      `modules/iam-oidc/main.tf`. **The "zero IAM iterations" claim is
+      unverified** — it can only be tested against a real `terraform apply`
+      to prod, which this session cannot run.
+- [x] ECR repository policy: `aws:SourceArn` is already `function:dejavu-*`,
+      which covers prod. Confirmed by reading
+      `modules/workload-roles/main.tf`'s `local.function_arn_pattern` — it is
+      not environment-scoped. No change made.
+- [x] Outputs → GitHub variables: `AWS_DEPLOY_ROLE_ARN_DEV`,
+      `AWS_DEPLOY_ROLE_ARN_PROD`, `AWS_WORKLOAD_ROLE_ARN_PROD`. — new
+      `deploy_role_arn_dev`/`deploy_role_arn_prod`/`workload_role_arn_prod`
+      outputs in `bootstrap/outputs.tf`. Setting the actual GitHub repo
+      variables from an applied bootstrap is still a human, post-apply step.
 - [ ] Verify the trust boundary like Phase 5 did: a `workflow_dispatch` from a
       non-`main` branch that names `environment: production` must stop at the
       approval gate (the environment's `branch_policy` + `required_reviewers`
-      are both already set, as checked on the live repo).
+      are both already set, as checked on the live repo). **Not done** — needs
+      a live GitHub Actions run against the applied roles.
 
 ---
 
@@ -389,7 +456,7 @@ The plan says under ~10 s, and exactly three checks.
 
 ## 7.5 — `deploy.yml`
 
-- [ ] Triggers:
+- [x] Triggers:
     - `workflow_run` on `CI`, `types: [completed]`, `branches: [main]`, with
       the job guarded by `github.event.workflow_run.conclusion == 'success'`
       and `event == 'push'`. **Deploy `github.event.workflow_run.head_sha`**,
@@ -397,36 +464,59 @@ The plan says under ~10 s, and exactly three checks.
       *latest* `main`, which may not be the commit CI built and pushed.
     - `workflow_dispatch` with inputs `environment` (dev/prod) and `sha`.
       That covers re-deploying a known SHA, rolling forward a fix, and 7.10's
-      drill.
-- [ ] `deploy-dev` job: `environment: dev`, assume `AWS_DEPLOY_ROLE_ARN_DEV`,
-      D9's skip check, `migrate.sh dev`, `deploy.sh dev`.
-- [ ] `deploy-prod` job: `needs: deploy-dev`, `environment: production`
+      drill. Added a third input, `drill` (boolean, default `false`), per
+      7.10's bypass below.
+- [x] `deploy-dev` job: `environment: dev`, assume `AWS_DEPLOY_ROLE_ARN_DEV`,
+      D9's skip check, `migrate.sh dev`, `deploy.sh dev`. Exposes a job
+      output (`skipped`) so `deploy-prod` can tell D9's runtime skip apart
+      from a job-level skip (see next item).
+- [x] `deploy-prod` job: `needs: deploy-dev`, `environment: production`
       (**required reviewer**, the gate), assume `AWS_DEPLOY_ROLE_ARN_PROD`,
       `promote-check.sh`, `migrate.sh prod`, `deploy.sh prod`.
     - If `deploy-dev` was *skipped* (dev destroyed), `deploy-prod` must not
       run. Nothing was verified in dev, so there's nothing to promote. Make
       that explicit in the `if:`. A skipped `needs` otherwise quietly skips
       dependants, and the next person to edit the condition may "fix" it.
-- [ ] **Shared concurrency with `terraform.yml`** (correction 4):
+      Done via `always()` + `needs.deploy-dev.result` + the `skipped` output;
+      a `workflow_dispatch` that targets `prod` directly makes `deploy-dev`
+      skip *by design* (its own `if` never matches), which is deliberately
+      let through — see the comment above `deploy-prod`'s `if:` in the file
+      for how the two "skipped" cases are told apart.
+- [x] **Shared concurrency with `terraform.yml`** (correction 4):
       `concurrency: { group: dejavu-deploy-<env>, cancel-in-progress: false }`
       on both workflows' dev and prod jobs. Job-level, not workflow-level, so
       a prod approval waiting for hours doesn't block dev.
-- [ ] **After `terraform.yml`'s apply, republish** (correction 2): its apply
+- [x] **After `terraform.yml`'s apply, republish** (correction 2): its apply
       jobs end with `deploy.sh <env> <live sha>`, reading the live SHA from
       `/api/version`, so config changes reach the alias. Skip it when the plan
-      reported no changes.
-- [ ] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
+      reported no changes. Detected with `terraform plan -detailed-exitcode`
+      (0 = no changes, 2 = changes) run before `apply`, which now applies the
+      saved plan file instead of re-planning inline. Assumes the deploy role
+      (not the apply role) for the republish step only, since the apply role
+      has no `UpdateFunctionCode`/`PublishVersion`/`UpdateAlias` (7.3).
+- [x] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
       (unchanged). Only code auto-promotes, never infrastructure.
-- [ ] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
+- [x] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
       this with Trivy; the deploy path is where it matters most, because these
-      jobs hold prod credentials).
-- [ ] `actionlint` clean (via Docker, as in 6.4).
-- [ ] **Why the manual gate, when everything is automated?** Write the answer
+      jobs hold prod credentials). `actions/checkout` and
+      `aws-actions/configure-aws-credentials` pinned by commit SHA resolved
+      from their `v4` tags via `gh api .../git/ref/tags/v4` (and, for the
+      annotated `configure-aws-credentials` tag, dereferenced to the commit
+      it points at), with a `# vX.Y.Z` comment. `terraform.yml`'s own action
+      refs were left as version tags, matching that file's existing
+      convention — the pin-by-SHA requirement in the plan is scoped to
+      `deploy.yml`.
+- [x] `actionlint` clean (via Docker, as in 6.4). Ran
+      `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color`
+      against the whole `.github/workflows/` directory — no findings.
+- [x] **Why the manual gate, when everything is automated?** Write the answer
       in the workflow comment, because the roadmap asks it. The smoke test
       only catches what it checks. The gate is where a human looks at dev
       after a real click-through and decides the change is one they meant to
       ship. On a Free-plan private repo the gate wouldn't enforce at all
-      (Phase 5's finding), so staying public is still load-bearing.
+      (Phase 5's finding), so staying public is still load-bearing. Written
+      as the comment block directly above the `deploy-prod` job in
+      `deploy.yml`.
 
 ---
 
@@ -436,7 +526,7 @@ Migrations run before code (7.5). For the length of a deploy, and for as long
 as a rollback might last, **the previous release runs against the new
 schema**. Rolling back the code doesn't roll back the schema.
 
-- [ ] **Write the rule** in `backend/migrations/README.md`: every migration
+- [x] **Write the rule** in `backend/MIGRATIONS.md`: every migration
       must be safe for the release currently in prod. Allowed in one deploy:
       add a nullable column or one with a default, add a table, add an index
       (`CONCURRENTLY` where the table is big enough to matter; it isn't yet,
@@ -444,33 +534,62 @@ schema**. Rolling back the code doesn't roll back the schema.
       Not allowed in one deploy: drop or rename a column or table, add
       `NOT NULL` without a default, narrow a type, tighten a `CHECK` existing
       rows or old code might violate.
-- [ ] **The rename, worked through**, since the roadmap asks. `Order.status` →
+- [x] **The rename, worked through**, since the roadmap asks. `Order.status` →
       `Order.fulfillmentStatus` takes **three deploys**: (1) add the new
       column, write both, read the old; (2) backfill, then read the new while
       still writing both; (3) stop writing the old, and **only in a later
       deploy** drop it. Rollback from deploy N lands on deploy N−1, which is
       safe at every step only if the drop never ships alongside the code that
-      stopped using the column.
-- [ ] **Guard in CI:** a `migration-safety` step in the `migrations` job. For
-      `.sql` files *added* in the PR (`git diff --name-only --diff-filter=A
-      origin/main`), grep the `-- Up Migration` section for `DROP COLUMN`,
-      `DROP TABLE`, `RENAME`, `ALTER COLUMN ... TYPE` and `SET NOT NULL`, and
-      fail unless the file carries a `-- contract: <why this is safe now>`
-      line. The guard is a speed bump, not a proof, and it catches the
-      accident rather than the deliberate choice.
-- [ ] Also fail if a PR **modifies** an existing migration file. CLAUDE.md
-      already says never to do that, and CI can enforce it.
+      stopped using the column. Written up in `backend/MIGRATIONS.md`.
+      **Moved out of `backend/migrations/`** after the merge: node-pg-migrate
+      reads every file in that directory, and `README.md` failed every run
+      with `Cannot determine numeric prefix for "README.md"`. Found by
+      running the integration suite on the combined branch.
+- [x] **Guard in CI:** a `migration-safety` step in the `migrations` job. For
+      `.sql` files *added* in the PR (diffed against the PR's base commit, or
+      the pre-push commit on a push to `main`), grep the `-- Up Migration`
+      section for `DROP COLUMN`, `DROP TABLE`, `RENAME`,
+      `ALTER COLUMN ... TYPE` and `SET NOT NULL`, and fail unless the file
+      carries a `-- contract: <why this is safe now>` line. The guard is a
+      speed bump, not a proof, and it catches the accident rather than the
+      deliberate choice. Implemented as
+      `backend/scripts/check-migration-safety.sh`, invoked from the
+      `migrations` job with `fetch-depth: 0` so the base commit is available
+      to diff against.
+- [x] Also fail if a PR **modifies** an existing migration file. CLAUDE.md
+      already says never to do that, and CI can enforce it. The same script
+      also fails on a **delete** (a rename is a delete of the old name plus
+      an add of the new one, so it's caught the same way).
 - [ ] **Stronger, optional:** a `backward-compat` job that migrates a fresh
       database with the PR's migrations, then runs `main`'s integration suite
       against it. That's the real claim ("old code works on new schema"),
-      tested rather than argued.
+      tested rather than argued. Not built in 7.6 — left for whoever picks it
+      up, per the verification below.
     - **Verify first:** `main`'s `globalSetup` will see applied migrations it
       has no files for. node-pg-migrate's order check may refuse. If so, the
       job needs `checkOrder: false` for that run or a pre-migrated database it
       doesn't migrate at all. Decide once you've seen the real error.
-- [ ] Verify the guard by mutation, like Phase 4: add a throwaway migration
+      **Answer:** it does not refuse. `checkOrder`
+      (`node_modules/node-pg-migrate/dist/bundle/index.js`, function
+      `checkOrder` and its call site in `up()` around line 3578) only walks
+      the two migration lists up to `Math.min(runNames.length,
+      migrations.length)` — it never looks past the shorter list. Already-run
+      migrations are read back ordered by `run_on, id`
+      (`getRunMigrations`, same file, ~line 3516), i.e. application order,
+      which matches filename order for a normal `up`. A PR's newest migration
+      always sorts after everything `main` already knows about, so it falls
+      past the compared prefix rather than inside it: `checkOrder` passes,
+      `getMigrationsToRun` finds nothing new (the on-disk migrations are all
+      already recorded as run), and `up()` logs "No migrations to run!" and
+      returns cleanly — exactly the state a `backward-compat` job wants, no
+      `checkOrder: false` needed. (It would only refuse if an unrun migration
+      sorted *before* an already-run one it doesn't have a file for, which
+      can't happen here since filenames are strictly increasing.)
+- [x] Verify the guard by mutation, like Phase 4: add a throwaway migration
       with `DROP COLUMN` on a branch, watch it fail, add the `contract` line,
-      watch it pass, then delete the branch.
+      watch it pass, then delete the branch. Also verified: modifying an
+      existing migration fails independently. Done on a local scratch branch,
+      deleted afterward — see the 7.6 commit message for the exact output.
 
 ---
 
@@ -478,40 +597,87 @@ schema**. Rolling back the code doesn't roll back the schema.
 
 `modules/observability` grows alarms, one module call per environment.
 
-- [ ] `aws_sns_topic "alarms"` + an `email` subscription from
+- [x] `aws_sns_topic "alarms"` + an `email` subscription from
       `var.alarm_email` (a GitHub secret, like `BUDGET_ALERT_EMAIL`, so the
       address isn't in a public repo). **The subscription stays
       `PendingConfirmation` until the email link is clicked**, and until then
       alarms go nowhere, silently. Confirm it and check
-      `aws sns list-subscriptions-by-topic` shows a real ARN.
-- [ ] **Alarm 1 · 5xx on the live alias.** `AWS/Lambda` `Url5xxCount`,
+      `aws sns list-subscriptions-by-topic` shows a real ARN. — both in
+      `modules/observability/main.tf`, gated on a new `enable_alarms`
+      variable (default `true`) so an environment can turn the whole set off
+      in one place. `var.alarm_email` wired into `envs/dev` and
+      `TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}` added next to every
+      `TF_VAR_budget_notification_email` line in `terraform.yml` (plan,
+      apply-dev, apply-prod). **Not verified live** — confirming the
+      subscription and its ARN needs a real apply and a clicked email link.
+- [x] **Alarm 1 · 5xx on the live alias.** `AWS/Lambda` `Url5xxCount`,
       `Sum ≥ 1` over 1 × 60 s, `treat_missing_data = notBreaching`.
       **Verify the dimension names from `aws cloudwatch list-metrics` after
       real traffic has hit the alias.** Don't guess whether it's
       `FunctionName` + `Resource`, or what `Resource` holds for a qualified
       URL. An alarm on a metric that never exists is silently green forever.
-- [ ] **Alarm 2 · Lambda `Errors`** on the api (alias-qualified) and on the
+      — Researched against AWS's own "Monitoring Lambda function URLs" docs
+      (not guessed): `Resource` for a qualified URL is
+      `"<function-name>:<alias>"` (AWS's own example:
+      `hello-world-function:$LATEST`), so `aws_cloudwatch_metric_alarm.api_5xx`
+      dimensions on `"dejavu-<env>-api:live"` (the alias 7.2 creates,
+      hardcoded as a local since this module doesn't depend on
+      `modules/lambda`). **Not live-verified** — needs `aws cloudwatch
+      list-metrics` after real traffic through the alias, per the checklist.
+- [x] **Alarm 2 · Lambda `Errors`** on the api (alias-qualified) and on the
       **migrator**, `Sum ≥ 1`. A failed migration should email someone even
-      though the pipeline also goes red.
-- [ ] **Alarm 3 · Lambda `Throttles`** on the api, `Sum ≥ 1`. Given
+      though the pipeline also goes red. — two alarms:
+      `aws_cloudwatch_metric_alarm.api_errors` (`Resource =
+      dejavu-<env>-api:live`) and `.migrator_errors` (`FunctionName =
+      dejavu-<env>-migrator`, no alias — 7.2 gives the migrator none).
+- [x] **Alarm 3 · Lambda `Throttles`** on the api, `Sum ≥ 1`. Given
       correction 10, this is the alarm most likely to fire for a reason that
-      has nothing to do with the code.
-- [ ] **Alarm 4 · `checkout.oversell`.** `aws_cloudwatch_log_metric_filter` on
+      has nothing to do with the code. — `aws_cloudwatch_metric_alarm.api_throttles`,
+      same `Resource` dimension as alarm 1/2.
+- [x] **Alarm 4 · `checkout.oversell`.** `aws_cloudwatch_log_metric_filter` on
       the api log group, pattern `{ $.event = "checkout.oversell" }`, metric
       `Dejavu/<env>` `CheckoutOversell`, value 1, **default value 0**. Alarm
       on `Sum ≥ 1`. The log line means a customer was charged and nothing was
       recorded (Phase 3), so it's a refund for a human, and it's the one
-      alarm here about money rather than uptime.
-    - Also filter `webhook.failed` → `WebhookFailed`. The roadmap's
+      alarm here about money rather than uptime. — confirmed the event key
+      exists verbatim (`grep -rn "checkout.oversell" backend/src` →
+      `webhookController.js:69`) before wiring the filter pattern to it.
+    - [x] Also filter `webhook.failed` → `WebhookFailed`. The roadmap's
       "failed-checkout rate" is this and `checkout.failed` together. One
-      alarm on their sum, or two, whichever you can explain.
-    - **Verify** each filter against a real log line with `aws logs
+      alarm on their sum, or two, whichever you can explain. — one alarm
+      (`aws_cloudwatch_metric_alarm.failed_checkout`), a `metric_query`
+      expression `webhook_failed + checkout_failed`, on the reasoning that a
+      customer-visible failed checkout is one incident regardless of which
+      side logged it. Also confirmed `webhook.failed`
+      (`webhookController.js:83`) and `checkout.failed`
+      (`checkoutController.js:123`) verbatim, and read `checkoutController.js`
+      to confirm `checkout.failed` only fires on the catch-all 500 (a genuine
+      Stripe/internal error), never on routine 400s like out-of-stock — so
+      folding it into this alarm doesn't make it noisy.
+    - [x] **Verify** each filter against a real log line with `aws logs
       test-metric-filter` before you trust it. CLAUDE.md's rule is that
       renaming an event key breaks an alarm, and this step is where that rule
-      starts to matter.
-- [ ] Every alarm has `alarm_actions` **and** `ok_actions` on the topic, so the
+      starts to matter. — **Researched, not live-verified** (no deployed log
+      group to test against here): whether the pattern can even match depends
+      on whether CloudWatch receives pino's raw JSON line unprefixed. Checked
+      `backend/src/lib/logger.js` (plain pino, no `pino-pretty`, one JSON
+      object per line) against AWS's "Configuring JSON and plain text log
+      formats" docs: the JSON *wrapping* Lambda can add to application logs is
+      implemented by patching a **managed runtime's** built-in logging calls
+      (for Node.js, the runtime's own `console.*`) — it only applies inside
+      that managed runtime's handler invocation path. The api image doesn't
+      go through it: it's a container image running a plain Express process
+      under the Lambda Web Adapter extension, invoked via a custom runtime
+      bootstrap, so that wrapper never runs. Default log format is plain text
+      regardless, which for a non-managed runtime means stdout bytes ship to
+      CloudWatch as-is, one line per event, unprefixed — so `{ $.event =
+      "..." }` should match pino's line directly. **Flagging per the
+      checklist rather than trusting this**: run `aws logs
+      test-metric-filter` against a real log line once the api is deployed
+      and has logged at least one of these three events.
+- [x] Every alarm has `alarm_actions` **and** `ok_actions` on the topic, so the
       drill's inbox shows both "ALARM" and "OK". That's how you know the
-      rollback actually cleared it.
+      rollback actually cleared it. — set on all six alarm resources.
 - [ ] Apply-role additions (bootstrap, human-applied): `sns:*Topic*`,
       `sns:Subscribe`, `sns:Unsubscribe`, `sns:*Attributes`, `sns:*Tag*` on
       `arn:aws:sns:<region>:<acct>:dejavu-*`; `cloudwatch:PutMetricAlarm`,
@@ -519,12 +685,17 @@ schema**. Rolling back the code doesn't roll back the schema.
       on `alarm:dejavu-*`; `logs:PutMetricFilter`, `DeleteMetricFilter`,
       `DescribeMetricFilters`. Expect the provider's tag read-back to want at
       least one more action (the 6.7 pattern), and fix it from the real
-      `AccessDenied`.
+      `AccessDenied`. — out of this workstream's file scope (7.3's agent adds
+      this in `modules/iam-oidc`); left unchecked here on purpose.
 - [ ] Cost: the first 10 alarm metrics are free, and so is SNS email at this
-      volume. Two environments × ~5 alarms stays at or under ~$0.
+      volume. Two environments × ~5 alarms stays at or under ~$0. — six alarm
+      resources per environment here, still comfortably under the free-tier
+      10; not re-verified against a real bill (needs 7.0's Cost Explorer
+      re-check).
 - [ ] **Test each alarm once** with `aws cloudwatch set-alarm-state
       --state-value ALARM` to prove the email path works end to end. That
-      proves routing, not detection. Detection is proven in 7.10.
+      proves routing, not detection. Detection is proven in 7.10. — needs a
+      live, applied environment; left for 7.10/live verification.
 
 ---
 
@@ -582,8 +753,15 @@ schema**. Rolling back the code doesn't roll back the schema.
       environment and logged as `admin.granted`. Register through the real
       prod frontend, grant, then create the two products through the admin UI
       or API. That exercises the real write path instead of a truncating seed.
-    - Unit-test the action's refusals (unknown email → error, not a silent
-      no-op) beside `tests/migrator.test.js`.
+      — Code done: `migrator.js` exports and routes `grant-admin`
+      (`src/migrator.js`), `userRepo.setAdminById` (`src/repositories/userRepo.js`).
+      Still open: the manual prod bootstrap (register via the real prod
+      frontend, invoke grant-admin, create the two products) is not part of
+      this file scope.
+    - [x] Unit-test the action's refusals (unknown email → error, not a silent
+      no-op) beside `tests/migrator.test.js`. Also added an integration test
+      (`tests/integration/migrator.test.js`) against real Postgres for the
+      write path itself.
     - *Considered and rejected:* letting `seed` run in prod behind a
       confirmation flag. It still truncates, and one misread payload would
       wipe prod's orders.
@@ -674,7 +852,7 @@ variable to the shipped code. A kill switch in prod code is its own bug.
       expand/contract as a rule for anyone writing a migration, and
       `grant-admin`. Update "Phase 6" wording where it now means both
       environments.
-- [ ] `backend/migrations/README.md` (7.6).
+- [ ] `backend/MIGRATIONS.md` (7.6).
 - [ ] `dejavu-execution-plan.md`: mark Phase 7 and batch H `[x]`; fix rows 3
       and 4 of the Verification table (7.0); add **"What Phase 7 actually
       turned up"**, keeping only the corrections that bit; and update the

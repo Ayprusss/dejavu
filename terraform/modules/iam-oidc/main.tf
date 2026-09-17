@@ -546,6 +546,20 @@ data "aws_iam_policy_document" "apply" {
         "lambda:PutFunctionConcurrency",
         "lambda:DeleteFunctionConcurrency",
         "lambda:GetFunctionConcurrency",
+        # 7.2: the alias Terraform now owns the lifecycle of, and the
+        # published version it points at. PublishVersion is also required by
+        # AWS whenever UpdateFunctionCode/CreateFunction is called with
+        # Publish=true, which is a separate grant from UpdateFunctionCode
+        # itself. The "dejavu-*" resource pattern below already covers
+        # qualified ARNs (a version or alias suffix is just ":<name>" glued
+        # onto the same string, and "*" matches colons too), so no separate
+        # resource entry is needed for these.
+        "lambda:CreateAlias",
+        "lambda:UpdateAlias",
+        "lambda:DeleteAlias",
+        "lambda:GetAlias",
+        "lambda:ListAliases",
+        "lambda:PublishVersion",
       ]
       resources = ["arn:aws:lambda:${var.aws_region}:${var.account_id}:function:dejavu-*"]
     }
@@ -603,6 +617,72 @@ data "aws_iam_policy_document" "apply" {
       effect    = "Allow"
       actions   = ["ssm:GetParameter"]
       resources = ["arn:aws:ssm:${var.aws_region}::parameter/aws/service/*"]
+    }
+  }
+
+  # --- 7.7: alarms and SNS. Same gate as the rest of this block, so it now
+  # applies to both dev and prod once 7.3 turns enable_workload_infrastructure
+  # on for prod's apply role too.
+  #
+  # This list is exactly what the 7.7 plan section specifies; it has not been
+  # exercised against a live apply in this session (no AWS credentials).
+  # Expect the provider's tag read-back to want at least one more action
+  # once a real apply hits an AccessDenied - the same pattern 6.5/6.7 hit
+  # repeatedly for budgets, EC2 and ECR - and fix it there rather than guess
+  # further here.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageAlarmSns"
+      effect = "Allow"
+      actions = [
+        "sns:*Topic*",
+        "sns:Subscribe",
+        "sns:Unsubscribe",
+        "sns:*Attributes",
+        "sns:*Tag*",
+      ]
+      resources = ["arn:aws:sns:${var.aws_region}:${var.account_id}:dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageAlarms"
+      effect = "Allow"
+      actions = [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:ListTagsForResource",
+        "cloudwatch:TagResource",
+      ]
+      resources = ["arn:aws:cloudwatch:${var.aws_region}:${var.account_id}:alarm:dejavu-*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid    = "ManageLogMetricFilters"
+      effect = "Allow"
+      actions = [
+        "logs:PutMetricFilter",
+        "logs:DeleteMetricFilter",
+      ]
+      resources = ["arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/dejavu-*"]
+    }
+  }
+
+  # A list call, same reasoning as DescribeLambdaLogGroups above.
+  dynamic "statement" {
+    for_each = var.enable_workload_infrastructure ? [1] : []
+    content {
+      sid       = "DescribeLogMetricFilters"
+      effect    = "Allow"
+      actions   = ["logs:DescribeMetricFilters"]
+      resources = ["*"]
     }
   }
 }
