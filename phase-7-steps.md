@@ -25,7 +25,7 @@ the smoke test fails → the alias reverts on its own → an alarm fires.
 | 7.1 | Decisions (below) signed off | $0 | [x] |
 | 7.2 | Lambda aliases + Function URL on the alias (dev) | $0 (URL changes) | [ ] |
 | 7.3 | Deploy role in bootstrap (human-applied) | $0 | [ ] |
-| 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [ ] |
+| 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [x] |
 | 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [~] code done; unverified on GitHub |
 | 7.6 | Expand/contract: written rule + CI guard | $0 | [x] |
 | 7.7 | Alarms + SNS (`modules/observability`) | ~$0 | [ ] |
@@ -392,65 +392,111 @@ sequence of stages.
 
 ### `migrate.sh <env> <sha>`
 
-- [ ] `update-function-code` the migrator to `dejavu-migrator:<sha>`, then
+- [x] `update-function-code` the migrator to `dejavu-migrator:<sha>`, then
       `aws lambda wait function-updated-v2`.
-- [ ] Invoke `{"action":"up"}` with `--cli-read-timeout 310` and
+- [x] Invoke `{"action":"up"}` with `--cli-read-timeout 310` and
       `AWS_MAX_ATTEMPTS=1` (correction 6).
-- [ ] **Fail on `FunctionError`, not just on exit code** (correction 5). Print
+- [x] **Fail on `FunctionError`, not just on exit code** (correction 5). Print
       the payload either way, so the applied-migration list lands in the job
       log.
-- [ ] **Verify** node-pg-migrate's transaction behaviour for the runner API as
+- [x] **Verify** node-pg-migrate's transaction behaviour for the runner API as
       the migrator calls it (single transaction for the whole run, or one per
       migration?). A failure halfway through a multi-migration deploy should
       leave the schema at a known point, and the runbook has to say which.
+      **Confirmed from `backend/node_modules/node-pg-migrate/dist/legacy/{runner,migration,migrationBuilder}.js`:**
+      `runner()` only wraps the whole batch in one `BEGIN`/`COMMIT` when
+      `options.singleTransaction` is truthy; `backend/src/migrator.js`'s
+      `up()` never sets it, so it's `undefined` (falsy) - despite the
+      TypeScript d.ts's `@default true` comment, nothing in the programmatic
+      `runner()` path applies that default itself. Instead each migration
+      gets its **own** individual `BEGIN`/`COMMIT` (`Migration._apply`, gated
+      on `pgm.isUsingTransaction()`, which defaults `true`). So: **one
+      transaction per migration, not one for the whole run.** A failure
+      halfway through a multi-migration deploy leaves every earlier migration
+      in that run committed and the failing one rolled back - the schema
+      lands exactly at "all migrations before the failing one," never
+      partially applied. `backend/MIGRATIONS.md` (7.6) should state this
+      plainly for the runbook.
 
 ### `deploy.sh <env> <sha>`
 
-- [ ] Record the rollback target first: `get-alias live` → `PREVIOUS_VERSION`.
+- [x] Record the rollback target first: `get-alias live` → `PREVIOUS_VERSION`.
       Check its image still exists in ECR (correction 8), and **refuse to
       deploy** if it doesn't. A deploy with no rollback target is exactly
       the case this phase exists to prevent.
-- [ ] `update-function-code` the api to `dejavu-api:<sha>` → wait.
-- [ ] `publish-version --code-sha256 <from the update>`. The guard ensures the
+    - **Extra case found while implementing:** `get-alias live` can return
+      `FunctionVersion: "$LATEST"` - not just on a brand-new function, but on
+      *any* re-create, since 7.2's `aws_lambda_alias` is created pointing at
+      `$LATEST` and `ignore_changes = [function_version]` leaves it there
+      until something moves it. `$LATEST` can never be a rollback target (the
+      next `update-function-code` would overwrite it, and it's the code
+      about to be replaced), so `deploy.sh` detects this and calls
+      `publish-version` (no `--code-sha256` guard - there's no prior
+      `update-function-code` result to check it against) to pin whatever
+      `$LATEST` is running right now to a real version number, points `live`
+      at it, and uses *that* as `PREVIOUS_VERSION` before doing anything else.
+      Covered by the harness (see below).
+- [x] `update-function-code` the api to `dejavu-api:<sha>` → wait.
+- [x] `publish-version --code-sha256 <from the update>`. The guard ensures the
       version published is the code just uploaded, not a concurrent change.
       **Note:** publishing code and config that haven't changed returns the
       existing version instead of a new one. Handle that as "already live",
       not as an error.
-- [ ] `update-alias live --function-version <new>`.
-- [ ] Run `smoke.sh`. On failure → `update-alias live --function-version
+- [x] `update-alias live --function-version <new>`.
+- [x] Run `smoke.sh`. On failure → `update-alias live --function-version
       $PREVIOUS_VERSION`, run `smoke.sh` **again against the rolled-back
       version**, and exit non-zero either way. A rollback that doesn't pass
       its own smoke test is a page, not a success. Say so in the job summary.
-- [ ] Prune: delete published api versions older than the newest ~10 that
+- [x] Prune: delete published api versions older than the newest ~10 that
       aren't the alias target. Keep this count below ECR's lifecycle count
-      (correction 8).
-- [ ] Write the outcome to `$GITHUB_STEP_SUMMARY`: env, SHA, image digest, old
+      (correction 8). Skipped entirely on exit 2 (rollback's own smoke also
+      failed) - that's an unresolved incident, not a moment to also be
+      deleting Lambda versions.
+- [x] Write the outcome to `$GITHUB_STEP_SUMMARY`: env, SHA, image digest, old
       version → new version, smoke timings, and whether it rolled back.
+      (Smoke *timings* live in `smoke.sh`'s own stdout, captured in the job
+      log rather than duplicated into the summary table.)
 
 ### `smoke.sh <url> <sha>`
 
 The plan says under ~10 s, and exactly three checks.
 
-- [ ] `GET /api/status` → 200.
-- [ ] `GET /api/version` → `{"sha":"<sha>"}`. This is how the script proves
+- [x] `GET /api/status` → 200.
+- [x] `GET /api/version` → `{"sha":"<sha>"}`. This is how the script proves
       the alias actually moved and it isn't testing the old version.
-- [ ] `GET /api/products` → 200 with ≥ 1 item. This one goes through RDS.
-- [ ] Per-request timeout ~4 s and a couple of retries, but a **hard ~15 s
+- [x] `GET /api/products` → 200 with ≥ 1 item. This one goes through RDS.
+- [x] Per-request timeout ~4 s and a couple of retries, but a **hard ~15 s
       total budget**. The first request after a shift is a cold start (p50
       ≈1.16 s, max seen 1.54 s in 6.9), so a single try with a 1 s timeout
       would flake. A flaky smoke test is a random rollback.
-- [ ] Not `/api/ready`: it duplicates `/api/products`'s DB check with less
+- [x] Not `/api/ready`: it duplicates `/api/products`'s DB check with less
       signal. Not checkout: it creates Stripe objects on every run. Write down
-      why each is excluded. The roadmap asks "why not more?"
+      why each is excluded. The roadmap asks "why not more?" (Both reasons
+      are in `smoke.sh`'s own header comment.)
 
 ### `promote-check.sh <sha>`
 
-- [ ] Resolve `dejavu-api:<sha>` and `dejavu-migrator:<sha>` to digests, and
+- [x] Resolve `dejavu-api:<sha>` and `dejavu-migrator:<sha>` to digests, and
       compare them with what dev's `live` alias version is running
       (`get-function --qualifier live` → `ResolvedImageUri`). Fail if prod
-      would run anything dev didn't (D4).
+      would run anything dev didn't (D4). (The migrator has no alias - 7.2 -
+      so its comparison is against `$LATEST` rather than a qualifier.)
 
-- [ ] Every script lint-clean under `shellcheck`, added to the `lint` job.
+- [x] Every script lint-clean under `shellcheck`, added to the `lint` job.
+      (`scripts/deploy/.shellcheckrc` disables SC2016 repo-wide for this
+      directory - every script deliberately compares against the literal
+      string `"$LATEST"` - and SC2001 for one readability-over-purity `sed`
+      in the test harness.)
+
+**Verified with a fake-`aws`/fake-`curl` bash harness**
+(`scripts/deploy/test/`, run via `scripts/deploy/test/run.sh`, no network or
+AWS credentials): happy path; smoke failure → rollback → exit 1; rollback
+smoke also failing → exit 2; migrator `FunctionError` → non-zero; missing
+rollback image → refuse; `publish-version` returning an existing version
+(no-op redeploy); the `$LATEST`-alias bootstrap case above; plus direct
+`smoke.sh` and `promote-check.sh` cases. 21/21 pass. Mutation-tested by
+temporarily disabling `migrate.sh`'s `FunctionError` check (`if false && ...`)
+and confirming the harness caught it (red), then reverting (green again).
 
 ---
 
