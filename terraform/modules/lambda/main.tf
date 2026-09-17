@@ -24,6 +24,13 @@ locals {
     DB_NAME            = var.db_name
     DB_SECRET_ARN      = var.db_secret_arn
 
+    # Both functions need it: the api builds Stripe redirect URLs from it, and
+    # the migrator's `seed` action builds product image URLs from it
+    # (src/seed.js). Found in 6.12: set on the api only, the migrator fell back
+    # to env.js's `https://dejavustudio.xyz` default and seeded image URLs that
+    # 404 - which 6.9 had misread as a hardcoded domain in the frontend.
+    FRONTEND_URL = var.frontend_url
+
     # No DB_SSL_CA_PATH: connectionOptions.js's own fallback
     # (`${__dirname}/../../certs/rds-global-bundle.pem`) resolves correctly
     # for both images without it, and a single hardcoded path here can't -
@@ -75,7 +82,6 @@ resource "aws_lambda_function" "api" {
       AWS_LWA_READINESS_CHECK_PATH = "/api/status"
       AWS_LWA_INVOKE_MODE          = "buffered"
       CORS_ORIGINS                 = join(",", var.cors_origins)
-      FRONTEND_URL                 = var.frontend_url
       TRUST_PROXY                  = tostring(var.trust_proxy)
     })
   }
