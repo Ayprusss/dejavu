@@ -192,6 +192,14 @@ module "roles_prod" {
   # token once GitHub has run the environment's protection rules, so a required
   # reviewer stands between a merge and an apply.
   github_environment = "production"
+
+  # 7.3/D6: prod's apply role widens to the Phase 6/7 shape now that envs/prod
+  # has its own workload role and RDS instance to scope against. Bring over
+  # every lesson from 6.7's eight rounds so this first prod apply needs zero
+  # IAM iterations - if it needs any, that's a finding for 7.8 to record.
+  enable_workload_infrastructure = true
+  workload_role_arn              = module.workload_roles.workload_role_arns["prod"]
+  ecr_repository_arns            = values(module.workload_roles.ecr_repository_arns)
 }
 
 # ---------------------------------------------------------------------------
@@ -233,12 +241,29 @@ module "workload_roles" {
   github_repository = var.github_repository
   oidc_provider_arn = aws_iam_openid_connect_provider.github.arn
 
-  # Only dev exists in Phase 6 (D6). Prod's entry joins this map in Phase 7,
-  # once envs/prod has an RDS instance to scope its Secrets Manager grant
-  # against.
+  # Only dev existed in Phase 6 (D6). Prod's entry joins this map in Phase 7
+  # (7.3), now that envs/prod is about to get an RDS instance to scope its
+  # Secrets Manager grant against (module.rds's identifier must match).
   workload_environments = {
     dev = {
       rds_identifier = "dejavu-dev"
+    }
+    prod = {
+      rds_identifier = "dejavu-prod"
+    }
+  }
+
+  # 7.3/D8: one deploy role per environment, distinct from the apply roles
+  # above. `github_environment` is the GitHub Environment name that shows up
+  # in the OIDC token's `sub` - "production", not "prod", to match the
+  # environment `roles_prod` already uses and the repo's existing GitHub
+  # Environment names.
+  deploy_environments = {
+    dev = {
+      github_environment = "dev"
+    }
+    prod = {
+      github_environment = "production"
     }
   }
 }

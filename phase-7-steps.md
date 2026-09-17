@@ -279,40 +279,66 @@ behind turned up these. Each one is handled in a step below.
 In `modules/workload-roles`, beside `dejavu-gha-push`. Applied by you with
 admin credentials, never by CI.
 
-- [ ] `dejavu-gha-deploy-dev`: trust `sub = repo:Ayprusss/dejavu:environment:dev`,
-      `aud = sts.amazonaws.com`.
-- [ ] `dejavu-gha-deploy-prod`: trust `sub = repo:Ayprusss/dejavu:environment:production`.
-- [ ] Permissions, scoped to `function:dejavu-<env>-api` and
+- [x] `dejavu-gha-deploy-dev`: trust `sub = repo:Ayprusss/dejavu:environment:dev`,
+      `aud = sts.amazonaws.com`. — `modules/workload-roles/main.tf`'s new
+      `deploy_trust`/`deploy` resources, `for_each` over a new
+      `deploy_environments` variable, wired from `bootstrap/main.tf`.
+- [x] `dejavu-gha-deploy-prod`: trust `sub = repo:Ayprusss/dejavu:environment:production`.
+      — same `for_each`, `deploy_environments.prod.github_environment = "production"`.
+- [x] Permissions, scoped to `function:dejavu-<env>-api` and
       `function:dejavu-<env>-migrator` (plus `:*` for qualified ARNs):
       `GetFunction`, `GetFunctionConfiguration`, `UpdateFunctionCode`,
       `PublishVersion`, `ListVersionsByFunction`, `DeleteFunction` (qualified
       ARNs only, for version pruning; condition it so it can't delete the
       unqualified function), `GetAlias`, `UpdateAlias`, and `InvokeFunction`
       on the **migrator only**.
-    - **Verify** the `DeleteFunction` scoping with a real `aws lambda
-      delete-function --function-name dejavu-dev-api` from the role. It must
-      be denied. If IAM can't separate the qualified and unqualified ARN
-      cleanly, drop pruning from the role and prune by hand instead.
-- [ ] ECR: `BatchGetImage`, `GetDownloadUrlForLayer`, `DescribeImages` on the
+    - **Researched, not live-verified:** a qualified Lambda ARN is the
+      unqualified one with a literal `:<version-or-alias>` appended, and
+      IAM's resource-pattern wildcard matches that trailing colon like any
+      other character. So `function:name:*` as a resource matches every
+      qualified ARN and provably none of the unqualified one — the pattern
+      requires the literal substring `function:name:` to appear, and the bare
+      ARN never contains that trailing colon. IAM *can* separate them
+      cleanly, with no condition key needed; documented in
+      `modules/workload-roles/main.tf`'s `deploy_function_arns` comment. Kept
+      pruning in the role on that basis, plus a belt-and-suspenders explicit
+      Deny on the two unqualified ARNs. **Still needs the plan's real
+      `aws lambda delete-function --function-name dejavu-dev-api` check
+      against a live role** — no AWS credentials in this session.
+- [x] ECR: `BatchGetImage`, `GetDownloadUrlForLayer`, `DescribeImages` on the
       two repos (`UpdateFunctionCode` for an image checks the caller's ECR
-      access too).
-- [ ] `sts:GetCallerIdentity`. Nothing else.
-- [ ] **Prod's workload role.** Add `prod = { rds_identifier = "dejavu-prod" }`
+      access too). — `deploy`'s `ReadEcrImages` statement.
+- [x] `sts:GetCallerIdentity`. Nothing else. — `deploy`'s `WhoAmI` statement.
+- [x] **Prod's workload role.** Add `prod = { rds_identifier = "dejavu-prod" }`
       to `workload_environments`, which creates `dejavu-prod-lambda` with SSM
       scoped to `/dejavu/prod/*` and Secrets Manager scoped by tag to
-      `db:dejavu-prod`.
-- [ ] **Prod's apply role.** `enable_workload_infrastructure = true`,
+      `db:dejavu-prod`. — added in `bootstrap/main.tf`'s `module.workload_roles`
+      call; the existing `for_each`-based resources in
+      `modules/workload-roles/main.tf` needed no changes to pick it up.
+- [x] **Prod's apply role.** `enable_workload_infrastructure = true`,
       `workload_role_arn` = prod's. Bring over every lesson from 6.7's eight
       rounds, so prod's first apply should need **zero** IAM iterations. If it
-      needs any, that's a finding: record it.
-- [ ] ECR repository policy: `aws:SourceArn` is already `function:dejavu-*`,
-      which covers prod. Confirm it; don't change it.
-- [ ] Outputs → GitHub variables: `AWS_DEPLOY_ROLE_ARN_DEV`,
-      `AWS_DEPLOY_ROLE_ARN_PROD`, `AWS_WORKLOAD_ROLE_ARN_PROD`.
+      needs any, that's a finding: record it. — set on `module.roles_prod` in
+      `bootstrap/main.tf`. Also added, gated on the same flag (so both dev and
+      prod's apply roles pick it up): the 7.2 alias/version Lambda actions and
+      the full 7.7 SNS/CloudWatch-alarm/log-metric-filter statement set, in
+      `modules/iam-oidc/main.tf`. **The "zero IAM iterations" claim is
+      unverified** — it can only be tested against a real `terraform apply`
+      to prod, which this session cannot run.
+- [x] ECR repository policy: `aws:SourceArn` is already `function:dejavu-*`,
+      which covers prod. Confirmed by reading
+      `modules/workload-roles/main.tf`'s `local.function_arn_pattern` — it is
+      not environment-scoped. No change made.
+- [x] Outputs → GitHub variables: `AWS_DEPLOY_ROLE_ARN_DEV`,
+      `AWS_DEPLOY_ROLE_ARN_PROD`, `AWS_WORKLOAD_ROLE_ARN_PROD`. — new
+      `deploy_role_arn_dev`/`deploy_role_arn_prod`/`workload_role_arn_prod`
+      outputs in `bootstrap/outputs.tf`. Setting the actual GitHub repo
+      variables from an applied bootstrap is still a human, post-apply step.
 - [ ] Verify the trust boundary like Phase 5 did: a `workflow_dispatch` from a
       non-`main` branch that names `environment: production` must stop at the
       approval gate (the environment's `branch_policy` + `required_reviewers`
-      are both already set, as checked on the live repo).
+      are both already set, as checked on the live repo). **Not done** — needs
+      a live GitHub Actions run against the applied roles.
 
 ---
 
