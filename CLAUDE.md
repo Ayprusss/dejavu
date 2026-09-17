@@ -99,7 +99,7 @@ Express app is assembled in `src/app.js` and started in `src/server.js`.
 
 **Critical ordering:** The Stripe webhook route (`/api/webhooks/stripe`) must be registered in `app.js` **before** `express.json()` because Stripe signature verification requires the raw request body. Never hoist a global body parser above it.
 
-**Middleware:** `helmet` → `cors` → `pino-http` → raw webhook route → `express.json()` → routes → 404 → error handler. `express-rate-limit` guards `/api/auth/login` (10 failures / 15 min) and `/api/checkout` (30 / 15 min); both are in-memory, so the budget is per instance.
+**Middleware:** `helmet` → `cors` → `pino-http` → raw webhook route → `express.json()` → routes → 404 → error handler. `express-rate-limit` guards `/api/auth/login` (10 failures / 15 min) and `/api/checkout` (30 / 15 min); both are in-memory, so the budget is per instance (per Lambda execution environment when deployed). Both key on `src/lib/clientIp.js`, not `req.ip`: on the Function URL the adapter passes a client's `X-Forwarded-For` through unmodified, so the real source IP is read from `x-amzn-request-context`, which AWS sets.
 
 **Health checks:** `/api/status` is liveness and never touches the database — it must keep answering 200 while Postgres is down, or a database blip gets the container restarted. `/api/ready` is readiness and does ping the database, returning 503 when it cannot.
 
@@ -144,22 +144,71 @@ On registration, `authController` links any prior guest `Order` rows that match 
 
 **Guest orders** are claimed explicitly via `POST /api/user/orders/claim` with the `stripeSessionId` from the buyer's own success page. Registration does **not** link orders by email — that let anyone who knew an address inherit that person's order history.
 
+### Deployment (AWS, Phase 6)
+
+The backend runs on Lambda behind a Function URL, talks to a private RDS
+Postgres 16, and reaches Stripe/SSM/Secrets Manager through a NAT instance.
+Infrastructure is `terraform/` (see `terraform/README.md` for first deploy,
+rotation, PITR restore and destroy/re-apply runbooks).
+
+- **One Dockerfile, two targets** (`backend/Dockerfile`, arm64):
+  - `api` — `node:22-bookworm-slim` plus the Lambda Web Adapter as an
+    extension; runs the ordinary Express server. `docker-compose.yml` builds
+    this same target locally.
+  - `migrator` — AWS Lambda Node base image; handler `src/migrator.handler`.
+    Accepts only `{"action":"up"}` and `{"action":"seed"}` (seed refuses
+    unless `DEPLOY_ENV=dev`). There is no `down` by payload, on purpose.
+- **Entrypoint:** the api image runs `src/lambda.js`, not `server.js`. When
+  `SSM_PARAMETER_PATH` is set it loads those parameters into `process.env`
+  (and `DB_USER` from the RDS secret) *before* `config/env.js` is required,
+  then requires `server.js`. Unset locally, so it falls straight through.
+  `lambda.js` must not require `config/env` or `lib/logger` at the top.
+- **Database on Lambda:** discrete `DB_HOST`/`DB_NAME`/`DB_SECRET_ARN`
+  instead of `DATABASE_URL`, TLS with the RDS CA bundle in `backend/certs/`,
+  and the password fetched lazily from the RDS-managed secret
+  (`src/db/credentials.js`, 5-minute cache). RDS rotates it weekly; `pool.js`
+  calls `invalidate()` on `28P01`, so a rotation costs at most one failed
+  request per warm environment, never a redeploy.
+- **No secret in a Lambda environment variable or a `.tf` file.** Secrets
+  live in SSM (`/dejavu/<env>/`, values set out of band) and the RDS-managed
+  secret. `modules/secrets` sets `prevent_destroy`; tear dev down with a
+  targeted destroy.
+- **Terraform creates functions, it doesn't deploy code** (`ignore_changes =
+  [image_uri]`). Images are tagged by git SHA in immutable ECR repos and
+  shipped with `aws lambda update-function-code`.
+- **Passwords use `bcryptjs`**, not native `bcrypt`, so the image has no
+  native build and no CPU-architecture coupling. Existing `$2b$` hashes still
+  verify (`tests/authHash.test.js`).
+
 ## Environment Variables
 
 **Backend** (`backend/.env`):
 ```
-DATABASE_URL=           # postgres://user:pass@host:5432/db
+DATABASE_URL=           # postgres://user:pass@host:5432/db (local/CI/tests)
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 JWT_SECRET=
-FRONTEND_URL=           # used for Stripe redirect URLs (default: https://dejavustudio.xyz)
+FRONTEND_URL=           # Stripe redirect URLs, and the seed's image URLs
+                        # (default: https://dejavustudio.xyz)
+SEED_IMAGE_BASE_URL=    # optional, overrides <FRONTEND_URL>/images/ in the seed
 PORT=                   # optional, default 5000
-PG_POOL_MAX=            # optional, default 10
+PG_POOL_MAX=            # optional, default 10 (1 on Lambda)
 LOG_LEVEL=              # optional, default info (silent under NODE_ENV=test)
-TRUST_PROXY=            # optional, default 0 — proxy hop count; the rate
-                        # limiters key on client IP, so a wrong value here
-                        # either merges every client into one bucket or lets
-                        # X-Forwarded-For be spoofed for a fresh one
+TRUST_PROXY=            # optional, default 0 — keep 0 on the Function URL,
+                        # where X-Forwarded-For is client-controlled
+CORS_ORIGINS=           # optional, comma-separated allowed origins
+```
+
+**Deployed only** (set by Terraform on the functions, or baked into the image):
+```
+DB_HOST= DB_NAME= DB_SECRET_ARN=   # all three or none; replaces DATABASE_URL
+DB_PORT=                # default 5432
+DB_SSL_CA_PATH=         # default backend/certs/rds-global-bundle.pem
+DB_USER=                # filled from the RDS secret at cold start, never set
+SSM_PARAMETER_PATH=     # e.g. /dejavu/dev — loaded into process.env at boot
+DEPLOY_ENV=             # dev | prod; the migrator's seed requires dev
+GIT_SHA=                # build arg; GET /api/version returns it
+AWS_LWA_PORT=5000 AWS_LWA_READINESS_CHECK_PATH=/api/status AWS_LWA_INVOKE_MODE=buffered
 ```
 
 **Frontend** (`dejavu/.env`):

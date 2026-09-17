@@ -33,7 +33,7 @@ restored from PITR once and the steps are written down.
 | 6.10 | Secret rotation actually exercised | | [x] |
 | 6.11 | PITR restore drill, written down | | [x] |
 | 6.12 | Destroy → re-apply drill, cost check | | [x] (48h cost recheck owed) |
-| 6.13 | Docs, execution plan, merge | | [ ] |
+| 6.13 | Docs, execution plan, merge | | [~] docs done; merge pending |
 
 ---
 
@@ -1183,24 +1183,31 @@ the agent read the logs back and verified.
 
 ## 6.13 — Docs, execution plan, merge
 
-- [ ] `terraform/README.md`: Phase 6 layout, first-deploy order (6.7),
+- [x] `terraform/README.md`: Phase 6 layout, first-deploy order (6.7),
       rotation note, restore runbook (6.11), destroy caveats (6.12).
-- [ ] `CLAUDE.md`: env vars (`DB_*`, `SSM_PARAMETER_PATH`, `GIT_SHA`,
+- [x] `CLAUDE.md`: env vars (`DB_*`, `SSM_PARAMETER_PATH`, `GIT_SHA`,
       `DEPLOY_ENV`, `AWS_LWA_*`), the `src/lambda.js` entrypoint, the
-      migrator, `bcryptjs`, the image targets.
-- [ ] `backend/.env.example`: document the new optional variables.
-- [ ] `dejavu-execution-plan.md`: mark Phase 5 and 6 `[x]`, add a **"What
+      migrator, `bcryptjs`, the image targets. — New "Deployment (AWS,
+      Phase 6)" section, plus the `clientIp` rate-limit keying.
+- [x] `backend/.env.example`: document the new optional variables.
+      (`SEED_IMAGE_BASE_URL`, `GIT_SHA`, `DEPLOY_ENV`, `SSM_PARAMETER_PATH`,
+      the adapter vars; `TRUST_PROXY` guidance corrected per 6.9.)
+- [x] `dejavu-execution-plan.md`: mark Phase 5 and 6 `[x]`, add a **"What
       Phase 6 actually turned up"** section (start from the corrections list
       above and keep only the ones that bit), and fix the cost table.
-- [ ] "What I'd do differently": app-level DB role instead of master (D8);
+- [x] "What I'd do differently": app-level DB role instead of master (D8);
       IAM DB auth instead of a password; VPC endpoints vs NAT at higher
       traffic; RDS Proxy if concurrency × pool ever approaches
       `max_connections`; a shared rate-limit store; retry once on `28P01`
       after `invalidate()` so a rotation is invisible to callers (6.10).
+      Also added: a stable hostname in front of the Function URL (6.12),
+      IAM Identity Center (6.0), and split SSM state at more environments.
 - [ ] Merge. `apply-dev` runs on the merge and should be a no-op plan, because
       you applied from the branch in 6.7. If it isn't, find out why before
       shipping anything else.
 - [ ] Delete this file before merge, as with Phase 5, or keep it. Your call.
+      Note: `terraform/README.md`, `envs/dev/main.tf` and the execution plan
+      link to it, so deleting it means dropping those references too.
 
 ---
 
@@ -1208,15 +1215,27 @@ the agent read the logs back and verified.
 
 - [x] A real Stripe test-mode webhook to the Function URL verifies its
       signature and records exactly one order (6.8).
-- [ ] RDS is not publicly accessible; 5432 is reachable only from the Lambda
-      SG (SG reference, not CIDR).
-- [ ] No secret value in any Lambda environment variable, `.tf` file, tfvars,
-      CI log, or (for the DB password) Terraform state.
-- [ ] Images are tagged by git SHA in an immutable repo; `/api/version`
-      returns the SHA that's live.
-- [ ] Trivy gates every PR on HIGH/CRITICAL.
+- [x] RDS is not publicly accessible; 5432 is reachable only from the Lambda
+      SG (SG reference, not CIDR). — Checked live after the 6.12 re-create:
+      `PubliclyAccessible: False`; the RDS SG's only ingress is 5432 from
+      the `dejavu-dev-lambda` SG ID, with no CIDR.
+- [x] No secret value in any Lambda environment variable, `.tf` file, tfvars,
+      CI log, or (for the DB password) Terraform state. — Both functions'
+      environments scanned (15 and 9 vars, nothing secret-shaped); no
+      `sk_`/`whsec_` strings in tracked `terraform/` or `.github/`; the DB
+      password is RDS-managed, so state holds only the secret's ARN. CI logs
+      by construction: no application secret passes through CI at all, and
+      the one GitHub secret the workflows read (the budget email) is masked. The
+      caveat stands: SSM SecureString values *are* in state after a
+      refresh (`modules/secrets` header; `value_wo` is the fix).
+- [x] Images are tagged by git SHA in an immutable repo; `/api/version`
+      returns the SHA that's live. — Both repos `IMMUTABLE`; live
+      `dejavu-api:57c6892`, `/api/version` → `{"sha":"57c6892"}`.
+- [x] Trivy gates every PR on HIGH/CRITICAL. — `ci.yml` `image` job,
+      SHA-pinned `trivy-action`, `severity: HIGH,CRITICAL`, `exit-code: 1`,
+      in the aggregate `ci` gate (6.4).
 - [x] PITR restore performed once, steps written down (6.11).
-- [ ] Cold start and login latency measured and quoted (6.9).
+- [x] Cold start and login latency measured and quoted (6.9).
 - [x] `destroy` → `apply` round trip done and timed (6.12).
 
 ---

@@ -1,8 +1,9 @@
-# Terraform — Phase 5
+# Terraform — Phases 5 and 6
 
 Infrastructure as code for Dejavu, plus the GitHub Actions identity that
-applies it. **Nothing in here costs money.** The first recurring charge arrives
-in Phase 6 with RDS.
+applies it. Phase 5 (identity, secrets, budgets) costs nothing. Phase 6 adds
+the running backend to **dev**: ~$25/month at list price while it's up (see
+"Tearing dev down" below for how to stop paying).
 
 ## Layout
 
@@ -11,15 +12,26 @@ bootstrap/          Account-level, create-once. Applied by a human, never by CI.
                       - S3 state bucket (versioned, encrypted, TLS-only)
                       - GitHub OIDC provider
                       - The four CI roles (plan/apply x dev/prod)
+                      - Phase 6: ECR repos, the push role, the per-env Lambda
+                        execution role, the RDS service-linked role, an
+                        account-wide $40 backstop budget
 
 modules/
   iam-oidc/         One plan role + one apply role for an environment
-  secrets/          SSM Parameter Store SecureString parameters
-  budget/           $5 monthly budget with actual + forecast alerts
+  secrets/          SSM Parameter Store SecureString parameters (prevent_destroy)
+  budget/           Monthly budget, filtered to the Environment tag
+  workload-roles/   ECR + push role + Lambda execution role (used by bootstrap)
+  network/          VPC, public + 2 private subnets, NAT instance, security groups
+  rds/              Private Postgres 16, managed master password, force_ssl
+  lambda/           api function + Function URL, migrator function
+  observability/    Log groups (14-day retention); alarms are Phase 7
 
-envs/dev/           Workload resources, applied by CI
-envs/prod/          Same, behind the protected `production` environment
+envs/dev/           Workload resources, applied by CI. Phase 6: all modules.
+envs/prod/          Phase 5 shape only until Phase 7, behind `production`
 ```
+
+First deploy order (image before apply, apply-role iteration, secrets,
+migrate, seed, smoke) is recorded step by step in `../phase-6-steps.md` 6.7.
 
 ## Why the IAM roles live in `bootstrap/` and not in `envs/`
 
