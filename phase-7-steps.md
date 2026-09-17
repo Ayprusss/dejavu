@@ -27,7 +27,7 @@ the smoke test fails → the alias reverts on its own → an alarm fires.
 | 7.3 | Deploy role in bootstrap (human-applied) | $0 | [ ] |
 | 7.4 | Deploy scripts: migrate → publish → shift → smoke → rollback | $0 | [ ] |
 | 7.5 | `deploy.yml`: auto to dev, gated promotion to prod | $0 | [~] code done; unverified on GitHub |
-| 7.6 | Expand/contract: written rule + CI guard | $0 | [ ] |
+| 7.6 | Expand/contract: written rule + CI guard | $0 | [x] |
 | 7.7 | Alarms + SNS (`modules/observability`) | ~$0 | [ ] |
 | 7.8 | Stand up prod (`envs/prod`) | **prod billing starts** | [ ] |
 | 7.9 | Prod data, secrets, Stripe, frontend | | [ ] |
@@ -526,7 +526,7 @@ Migrations run before code (7.5). For the length of a deploy, and for as long
 as a rollback might last, **the previous release runs against the new
 schema**. Rolling back the code doesn't roll back the schema.
 
-- [ ] **Write the rule** in `backend/migrations/README.md`: every migration
+- [x] **Write the rule** in `backend/migrations/README.md`: every migration
       must be safe for the release currently in prod. Allowed in one deploy:
       add a nullable column or one with a default, add a table, add an index
       (`CONCURRENTLY` where the table is big enough to matter; it isn't yet,
@@ -534,33 +534,58 @@ schema**. Rolling back the code doesn't roll back the schema.
       Not allowed in one deploy: drop or rename a column or table, add
       `NOT NULL` without a default, narrow a type, tighten a `CHECK` existing
       rows or old code might violate.
-- [ ] **The rename, worked through**, since the roadmap asks. `Order.status` →
+- [x] **The rename, worked through**, since the roadmap asks. `Order.status` →
       `Order.fulfillmentStatus` takes **three deploys**: (1) add the new
       column, write both, read the old; (2) backfill, then read the new while
       still writing both; (3) stop writing the old, and **only in a later
       deploy** drop it. Rollback from deploy N lands on deploy N−1, which is
       safe at every step only if the drop never ships alongside the code that
-      stopped using the column.
-- [ ] **Guard in CI:** a `migration-safety` step in the `migrations` job. For
-      `.sql` files *added* in the PR (`git diff --name-only --diff-filter=A
-      origin/main`), grep the `-- Up Migration` section for `DROP COLUMN`,
-      `DROP TABLE`, `RENAME`, `ALTER COLUMN ... TYPE` and `SET NOT NULL`, and
-      fail unless the file carries a `-- contract: <why this is safe now>`
-      line. The guard is a speed bump, not a proof, and it catches the
-      accident rather than the deliberate choice.
-- [ ] Also fail if a PR **modifies** an existing migration file. CLAUDE.md
-      already says never to do that, and CI can enforce it.
+      stopped using the column. Written up in `backend/migrations/README.md`.
+- [x] **Guard in CI:** a `migration-safety` step in the `migrations` job. For
+      `.sql` files *added* in the PR (diffed against the PR's base commit, or
+      the pre-push commit on a push to `main`), grep the `-- Up Migration`
+      section for `DROP COLUMN`, `DROP TABLE`, `RENAME`,
+      `ALTER COLUMN ... TYPE` and `SET NOT NULL`, and fail unless the file
+      carries a `-- contract: <why this is safe now>` line. The guard is a
+      speed bump, not a proof, and it catches the accident rather than the
+      deliberate choice. Implemented as
+      `backend/scripts/check-migration-safety.sh`, invoked from the
+      `migrations` job with `fetch-depth: 0` so the base commit is available
+      to diff against.
+- [x] Also fail if a PR **modifies** an existing migration file. CLAUDE.md
+      already says never to do that, and CI can enforce it. The same script
+      also fails on a **delete** (a rename is a delete of the old name plus
+      an add of the new one, so it's caught the same way).
 - [ ] **Stronger, optional:** a `backward-compat` job that migrates a fresh
       database with the PR's migrations, then runs `main`'s integration suite
       against it. That's the real claim ("old code works on new schema"),
-      tested rather than argued.
+      tested rather than argued. Not built in 7.6 — left for whoever picks it
+      up, per the verification below.
     - **Verify first:** `main`'s `globalSetup` will see applied migrations it
       has no files for. node-pg-migrate's order check may refuse. If so, the
       job needs `checkOrder: false` for that run or a pre-migrated database it
       doesn't migrate at all. Decide once you've seen the real error.
-- [ ] Verify the guard by mutation, like Phase 4: add a throwaway migration
+      **Answer:** it does not refuse. `checkOrder`
+      (`node_modules/node-pg-migrate/dist/bundle/index.js`, function
+      `checkOrder` and its call site in `up()` around line 3578) only walks
+      the two migration lists up to `Math.min(runNames.length,
+      migrations.length)` — it never looks past the shorter list. Already-run
+      migrations are read back ordered by `run_on, id`
+      (`getRunMigrations`, same file, ~line 3516), i.e. application order,
+      which matches filename order for a normal `up`. A PR's newest migration
+      always sorts after everything `main` already knows about, so it falls
+      past the compared prefix rather than inside it: `checkOrder` passes,
+      `getMigrationsToRun` finds nothing new (the on-disk migrations are all
+      already recorded as run), and `up()` logs "No migrations to run!" and
+      returns cleanly — exactly the state a `backward-compat` job wants, no
+      `checkOrder: false` needed. (It would only refuse if an unrun migration
+      sorted *before* an already-run one it doesn't have a file for, which
+      can't happen here since filenames are strictly increasing.)
+- [x] Verify the guard by mutation, like Phase 4: add a throwaway migration
       with `DROP COLUMN` on a branch, watch it fail, add the `contract` line,
-      watch it pass, then delete the branch.
+      watch it pass, then delete the branch. Also verified: modifying an
+      existing migration fails independently. Done on a local scratch branch,
+      deleted afterward — see the 7.6 commit message for the exact output.
 
 ---
 
