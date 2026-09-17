@@ -73,8 +73,63 @@ const seed = async () => {
   return { seeded: true };
 };
 
+/** Loose sanity check, not full RFC validation — just enough to catch a typo'd payload. */
+const looksLikeEmail = (value) =>
+  typeof value === 'string' && /^\S+@\S+$/.test(value.trim());
+
+/**
+ * Sets `isAdmin = true` on an already-registered user. Unlike `seed`, this is
+ * allowed in every DEPLOY_ENV: it writes one row a human named by email,
+ * rather than truncating the database, so there is nothing here for prod to
+ * be protected from.
+ *
+ * Matches the email the same case-insensitive way `authController.login`
+ * does — `userRepo.findByEmail` compares on `lower(email)`, lining up with
+ * the unique index from migration 0007.
+ *
+ * Refuses on a missing/malformed email and on an email with no matching
+ * user — both are errors, not a silent no-op, so a typo doesn't look like it
+ * worked. Granting a user who is already an admin succeeds idempotently
+ * instead of erroring, so re-running this (or two people running it) is safe.
+ *
+ * Deferred requires, same reasoning as `up`/`seed`: `db/pool` and `lib/logger`
+ * both transitively require `config/env`, which validates at require-time and
+ * must not run before `loadSecrets()` has populated `process.env`.
+ */
+const grantAdmin = async (email) => {
+  if (!looksLikeEmail(email)) {
+    throw new Error(
+      `grant-admin requires a valid "email" string.`,
+    );
+  }
+
+  const pool = require('./db/pool');
+  const userRepo = require('./repositories/userRepo');
+  const logger = require('./lib/logger');
+
+  const user = await userRepo.findByEmail(pool, email.trim());
+  if (!user) {
+    // No email here, deliberately — this error can surface in an invocation
+    // result or a CI log, and the email is exactly the PII admin.granted
+    // below is careful to leave out.
+    throw new Error('No registered user found for that email.');
+  }
+
+  if (user.isAdmin) {
+    return { granted: true, alreadyAdmin: true, userId: user.id };
+  }
+
+  await userRepo.setAdminById(pool, user.id, true);
+
+  // userId only, never the email — keeps PII out of CloudWatch.
+  logger.info({ event: 'admin.granted', userId: user.id }, 'Granted admin access');
+
+  return { granted: true, alreadyAdmin: false, userId: user.id };
+};
+
 exports.up = up;
 exports.seed = seed;
+exports.grantAdmin = grantAdmin;
 
 exports.handler = async (event) => {
   await loadSecrets();
@@ -89,8 +144,13 @@ exports.handler = async (event) => {
     return seed();
   }
 
+  if (action === 'grant-admin') {
+    return grantAdmin(event?.email);
+  }
+
   throw new Error(
-    `Unsupported action ${JSON.stringify(action)}. Only "up" and "seed" are accepted — ` +
-      '"down" against a deployed database is deliberately not a payload.',
+    `Unsupported action ${JSON.stringify(action)}. Only "up", "seed" and ` +
+      '"grant-admin" are accepted — "down" against a deployed database is ' +
+      'deliberately not a payload.',
   );
 };

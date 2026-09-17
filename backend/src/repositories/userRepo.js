@@ -36,4 +36,19 @@ const insert = async (
   return rows[0];
 };
 
-module.exports = { findByEmail, findById, insert };
+/**
+ * Set (or clear) `isAdmin` on an existing user by id.
+ *
+ * Used by the migrator's `grant-admin` action — the caller has already
+ * looked the user up by email, so this takes the id rather than repeating the
+ * `lower(email)` match.
+ */
+const setAdminById = async (db, id, isAdmin) => {
+  const { rows } = await db.query(
+    `UPDATE "User" SET "isAdmin" = $2 WHERE "id" = $1 RETURNING *`,
+    [id, isAdmin],
+  );
+  return rows[0] ?? null;
+};
+
+module.exports = { findByEmail, findById, insert, setAdminById };
