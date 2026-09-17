@@ -353,8 +353,25 @@ data "aws_iam_policy_document" "deploy" {
       "lambda:DeleteFunction",
       "lambda:GetAlias",
       "lambda:UpdateAlias",
+      # deploy.sh and terraform.yml's republish both find the smoke-test URL
+      # with get-function-url-config --qualifier live.
+      "lambda:GetFunctionUrlConfig",
     ]
     resources = local.deploy_function_arns[each.key]
+  }
+
+  # promote-check.sh runs in the prod deploy job and compares the digest
+  # prod is about to run with what dev's live alias is running (D4). That's
+  # a read of dev's api, so prod's role gets exactly that read and nothing
+  # else of dev's. Dev's role needs no such statement.
+  dynamic "statement" {
+    for_each = each.key == "prod" ? [1] : []
+    content {
+      sid       = "ReadDevLiveForPromoteCheck"
+      effect    = "Allow"
+      actions   = ["lambda:GetFunction"]
+      resources = ["arn:aws:lambda:${var.aws_region}:${var.account_id}:function:dejavu-dev-api:live"]
+    }
   }
 
   # scripts/deploy/migrate.sh is the only script that invokes anything, and
