@@ -34,3 +34,24 @@ variable "budget_notification_email" {
   type        = string
   sensitive   = true
 }
+
+variable "alarm_email" {
+  description = <<-DESC
+    Where 7.7's operational alarms go (ALARM and OK), a separate address
+    from the budget one because it's a different signal to a different
+    audience (cost vs. "something broke"). No default and never committed,
+    mirroring budget_notification_email above - supply it as
+    TF_VAR_alarm_email, which CI reads from the ALARM_EMAIL secret.
+  DESC
+  type        = string
+  sensitive   = true
+}
+
+variable "enable_alarms" {
+  description = <<-DESC
+    Passed straight through to modules/observability. True by default;
+    flip to false to turn dev's alarms off without touching main.tf.
+  DESC
+  type        = bool
+  default     = true
+}

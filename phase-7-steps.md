@@ -593,40 +593,87 @@ schema**. Rolling back the code doesn't roll back the schema.
 
 `modules/observability` grows alarms, one module call per environment.
 
-- [ ] `aws_sns_topic "alarms"` + an `email` subscription from
+- [x] `aws_sns_topic "alarms"` + an `email` subscription from
       `var.alarm_email` (a GitHub secret, like `BUDGET_ALERT_EMAIL`, so the
       address isn't in a public repo). **The subscription stays
       `PendingConfirmation` until the email link is clicked**, and until then
       alarms go nowhere, silently. Confirm it and check
-      `aws sns list-subscriptions-by-topic` shows a real ARN.
-- [ ] **Alarm 1 · 5xx on the live alias.** `AWS/Lambda` `Url5xxCount`,
+      `aws sns list-subscriptions-by-topic` shows a real ARN. — both in
+      `modules/observability/main.tf`, gated on a new `enable_alarms`
+      variable (default `true`) so an environment can turn the whole set off
+      in one place. `var.alarm_email` wired into `envs/dev` and
+      `TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}` added next to every
+      `TF_VAR_budget_notification_email` line in `terraform.yml` (plan,
+      apply-dev, apply-prod). **Not verified live** — confirming the
+      subscription and its ARN needs a real apply and a clicked email link.
+- [x] **Alarm 1 · 5xx on the live alias.** `AWS/Lambda` `Url5xxCount`,
       `Sum ≥ 1` over 1 × 60 s, `treat_missing_data = notBreaching`.
       **Verify the dimension names from `aws cloudwatch list-metrics` after
       real traffic has hit the alias.** Don't guess whether it's
       `FunctionName` + `Resource`, or what `Resource` holds for a qualified
       URL. An alarm on a metric that never exists is silently green forever.
-- [ ] **Alarm 2 · Lambda `Errors`** on the api (alias-qualified) and on the
+      — Researched against AWS's own "Monitoring Lambda function URLs" docs
+      (not guessed): `Resource` for a qualified URL is
+      `"<function-name>:<alias>"` (AWS's own example:
+      `hello-world-function:$LATEST`), so `aws_cloudwatch_metric_alarm.api_5xx`
+      dimensions on `"dejavu-<env>-api:live"` (the alias 7.2 creates,
+      hardcoded as a local since this module doesn't depend on
+      `modules/lambda`). **Not live-verified** — needs `aws cloudwatch
+      list-metrics` after real traffic through the alias, per the checklist.
+- [x] **Alarm 2 · Lambda `Errors`** on the api (alias-qualified) and on the
       **migrator**, `Sum ≥ 1`. A failed migration should email someone even
-      though the pipeline also goes red.
-- [ ] **Alarm 3 · Lambda `Throttles`** on the api, `Sum ≥ 1`. Given
+      though the pipeline also goes red. — two alarms:
+      `aws_cloudwatch_metric_alarm.api_errors` (`Resource =
+      dejavu-<env>-api:live`) and `.migrator_errors` (`FunctionName =
+      dejavu-<env>-migrator`, no alias — 7.2 gives the migrator none).
+- [x] **Alarm 3 · Lambda `Throttles`** on the api, `Sum ≥ 1`. Given
       correction 10, this is the alarm most likely to fire for a reason that
-      has nothing to do with the code.
-- [ ] **Alarm 4 · `checkout.oversell`.** `aws_cloudwatch_log_metric_filter` on
+      has nothing to do with the code. — `aws_cloudwatch_metric_alarm.api_throttles`,
+      same `Resource` dimension as alarm 1/2.
+- [x] **Alarm 4 · `checkout.oversell`.** `aws_cloudwatch_log_metric_filter` on
       the api log group, pattern `{ $.event = "checkout.oversell" }`, metric
       `Dejavu/<env>` `CheckoutOversell`, value 1, **default value 0**. Alarm
       on `Sum ≥ 1`. The log line means a customer was charged and nothing was
       recorded (Phase 3), so it's a refund for a human, and it's the one
-      alarm here about money rather than uptime.
-    - Also filter `webhook.failed` → `WebhookFailed`. The roadmap's
+      alarm here about money rather than uptime. — confirmed the event key
+      exists verbatim (`grep -rn "checkout.oversell" backend/src` →
+      `webhookController.js:69`) before wiring the filter pattern to it.
+    - [x] Also filter `webhook.failed` → `WebhookFailed`. The roadmap's
       "failed-checkout rate" is this and `checkout.failed` together. One
-      alarm on their sum, or two, whichever you can explain.
-    - **Verify** each filter against a real log line with `aws logs
+      alarm on their sum, or two, whichever you can explain. — one alarm
+      (`aws_cloudwatch_metric_alarm.failed_checkout`), a `metric_query`
+      expression `webhook_failed + checkout_failed`, on the reasoning that a
+      customer-visible failed checkout is one incident regardless of which
+      side logged it. Also confirmed `webhook.failed`
+      (`webhookController.js:83`) and `checkout.failed`
+      (`checkoutController.js:123`) verbatim, and read `checkoutController.js`
+      to confirm `checkout.failed` only fires on the catch-all 500 (a genuine
+      Stripe/internal error), never on routine 400s like out-of-stock — so
+      folding it into this alarm doesn't make it noisy.
+    - [x] **Verify** each filter against a real log line with `aws logs
       test-metric-filter` before you trust it. CLAUDE.md's rule is that
       renaming an event key breaks an alarm, and this step is where that rule
-      starts to matter.
-- [ ] Every alarm has `alarm_actions` **and** `ok_actions` on the topic, so the
+      starts to matter. — **Researched, not live-verified** (no deployed log
+      group to test against here): whether the pattern can even match depends
+      on whether CloudWatch receives pino's raw JSON line unprefixed. Checked
+      `backend/src/lib/logger.js` (plain pino, no `pino-pretty`, one JSON
+      object per line) against AWS's "Configuring JSON and plain text log
+      formats" docs: the JSON *wrapping* Lambda can add to application logs is
+      implemented by patching a **managed runtime's** built-in logging calls
+      (for Node.js, the runtime's own `console.*`) — it only applies inside
+      that managed runtime's handler invocation path. The api image doesn't
+      go through it: it's a container image running a plain Express process
+      under the Lambda Web Adapter extension, invoked via a custom runtime
+      bootstrap, so that wrapper never runs. Default log format is plain text
+      regardless, which for a non-managed runtime means stdout bytes ship to
+      CloudWatch as-is, one line per event, unprefixed — so `{ $.event =
+      "..." }` should match pino's line directly. **Flagging per the
+      checklist rather than trusting this**: run `aws logs
+      test-metric-filter` against a real log line once the api is deployed
+      and has logged at least one of these three events.
+- [x] Every alarm has `alarm_actions` **and** `ok_actions` on the topic, so the
       drill's inbox shows both "ALARM" and "OK". That's how you know the
-      rollback actually cleared it.
+      rollback actually cleared it. — set on all six alarm resources.
 - [ ] Apply-role additions (bootstrap, human-applied): `sns:*Topic*`,
       `sns:Subscribe`, `sns:Unsubscribe`, `sns:*Attributes`, `sns:*Tag*` on
       `arn:aws:sns:<region>:<acct>:dejavu-*`; `cloudwatch:PutMetricAlarm`,
@@ -634,12 +681,17 @@ schema**. Rolling back the code doesn't roll back the schema.
       on `alarm:dejavu-*`; `logs:PutMetricFilter`, `DeleteMetricFilter`,
       `DescribeMetricFilters`. Expect the provider's tag read-back to want at
       least one more action (the 6.7 pattern), and fix it from the real
-      `AccessDenied`.
+      `AccessDenied`. — out of this workstream's file scope (7.3's agent adds
+      this in `modules/iam-oidc`); left unchecked here on purpose.
 - [ ] Cost: the first 10 alarm metrics are free, and so is SNS email at this
-      volume. Two environments × ~5 alarms stays at or under ~$0.
+      volume. Two environments × ~5 alarms stays at or under ~$0. — six alarm
+      resources per environment here, still comfortably under the free-tier
+      10; not re-verified against a real bill (needs 7.0's Cost Explorer
+      re-check).
 - [ ] **Test each alarm once** with `aws cloudwatch set-alarm-state
       --state-value ALARM` to prove the email path works end to end. That
-      proves routing, not detection. Detection is proven in 7.10.
+      proves routing, not detection. Detection is proven in 7.10. — needs a
+      live, applied environment; left for 7.10/live verification.
 
 ---
 

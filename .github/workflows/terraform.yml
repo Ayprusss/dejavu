@@ -103,6 +103,7 @@ jobs:
         working-directory: terraform/envs/${{ matrix.environment }}
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           set +e
           terraform plan -no-color -input=false -out=tfplan > plan.txt 2>&1
@@ -215,6 +216,7 @@ jobs:
         working-directory: terraform/envs/dev
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           set +e
           terraform plan -input=false -detailed-exitcode -out=tfplan
@@ -322,6 +324,7 @@ jobs:
         working-directory: terraform/envs/prod
         env:
           TF_VAR_budget_notification_email: ${{ secrets.BUDGET_ALERT_EMAIL }}
+          TF_VAR_alarm_email: ${{ secrets.ALARM_EMAIL }}
         run: |
           set +e
           terraform plan -input=false -detailed-exitcode -out=tfplan
