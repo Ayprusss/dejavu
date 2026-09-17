@@ -51,7 +51,16 @@ jobs:
             scripts/deploy/*.sh \
             scripts/deploy/test/run.sh \
             scripts/deploy/test/fake-bin/aws \
-            scripts/deploy/test/fake-bin/curl
+            scripts/deploy/test/fake-bin/curl \
+            backend/scripts/check-migration-safety.sh
+
+      # The fake-aws harness is the only proof of the rollback and
+      # FunctionError logic short of a live deploy, so CI runs it rather
+      # than trusting it was run once by hand. ubuntu runners ship jq.
+      - name: Deploy script harness (fake aws/curl)
+        if: matrix.workspace == 'backend'
+        working-directory: .
+        run: bash scripts/deploy/test/run.sh
 
   test-backend:
     name: test-backend (node ${{ matrix.node }})
