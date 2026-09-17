@@ -240,17 +240,28 @@ behind turned up these. Each one is handled in a step below.
 
 `modules/lambda`, applied to dev through the normal PR → `terraform.yml` path.
 
-- [ ] `aws_lambda_alias "api_live"`: `name = "live"`,
+- [x] `aws_lambda_alias "api_live"`: `name = "live"`,
       `function_version` = the function's current published version.
       **`lifecycle { ignore_changes = [function_version] }`**. Terraform
       creates the alias and the pipeline owns where it points (D5 from Phase 6,
       extended).
-    - **Verify, don't assume:** whether `CreateAlias` accepts `$LATEST`. If it
+    - [x] **Verify, don't assume:** whether `CreateAlias` accepts `$LATEST`. If it
       doesn't, set `publish = true` on the function so the first apply creates
       version 1 for the alias to reference, and keep `ignore_changes` on
       `image_uri`. Check `publish` doesn't make every later config-only apply
       publish a version. That would bypass the pipeline and the smoke test.
-- [ ] `aws_lambda_function_url.api`: add `qualifier = aws_lambda_alias.api_live.name`.
+      **Verified via docs (provider source + AWS API docs), not a live call:**
+      `function_version` accepts the literal `"$LATEST"` for a plain
+      (non-weighted) alias - the provider validates it against
+      `(\$LATEST|[0-9]+)`, and AWS's alias docs describe (while discouraging
+      long-term use of) exactly this. So `publish = true` isn't needed, which
+      also sidesteps the bypass risk: `publish`'s own description is "publish
+      creation/**change**", and env/memory edits go through
+      `UpdateFunctionConfiguration` the same as code - so `publish = true`
+      would have made Terraform publish an extra, unsmoked version on every
+      config-only apply. Used `function_version = "$LATEST"` instead; see the
+      comment above `aws_lambda_alias.api_live` in `modules/lambda/main.tf`.
+- [x] `aws_lambda_function_url.api`: add `qualifier = aws_lambda_alias.api_live.name`.
       `aws_lambda_permission.public_invoke`: add the same `qualifier`.
 - [ ] **Verify the Function URL's permission requirement against a real
       `curl`.** AWS has been tightening URL invoke permissions (both
@@ -258,19 +269,41 @@ behind turned up these. Each one is handled in a step below.
       policy for new URLs). A 403 from a correctly created URL looks exactly
       like a broken adapter. If a second permission statement is needed, add it
       with the same qualifier and write down why.
-- [ ] Migrator: **no alias.** It's invoked by the pipeline at `$LATEST`,
+      **Not verified live (no deployed infra available to this workstream).**
+      Docs research (docs.aws.amazon.com/lambda/latest/dg/urls-auth.html,
+      current as of this reading) is unambiguous that `NONE` auth now needs a
+      second statement: `lambda:InvokeFunction` gated on the
+      `InvokedViaFunctionUrl` condition key, on top of the existing
+      `lambda:InvokeFunctionUrl` statement - the note flags this as enforced
+      for new function URLs since October 2025, all URLs by November 2026.
+      Added `aws_lambda_permission.public_invoke_function` (qualified,
+      `invoked_via_function_url = true`) on that basis. **Still needs a real
+      `curl` against the deployed qualified URL** to confirm this is
+      sufficient and no third statement is needed - flagging per the task's
+      instructions, since that requires live AWS.
+- [x] Migrator: **no alias.** It's invoked by the pipeline at `$LATEST`,
       straight after its own `update-function-code`. It never takes public
-      traffic, so there's nothing to roll back to.
+      traffic, so there's nothing to roll back to. (No code change needed -
+      confirmed no alias resource exists for `aws_lambda_function.migrator`,
+      and added a comment saying so.)
 - [ ] Output `function_url` now reads the qualified URL. Update the Stripe
       endpoint in place (`webhook_endpoints update`, which keeps the signing
       secret, as in 6.12) and Vercel's `VITE_API_URL`, then redeploy the
       frontend.
+      **Terraform part done** (`function_url` output is now the qualified
+      alias URL by construction, since `aws_lambda_function_url.api` itself
+      carries the qualifier). **The Stripe/Vercel live updates are out of this
+      workstream's scope** (no Stripe/Vercel commands per the hard rules, and
+      they only make sense once this is actually applied) - flagging as not
+      done here.
 - [ ] Verify: `/api/version` through the new URL; `stripe trigger
       checkout.session.completed` → one `order.created`, no
       `webhook.signature_invalid`. The raw-body path now runs through an alias,
       and that's worth re-proving once rather than assuming.
+      **Not verified - needs live AWS + Stripe, out of scope here.**
 - [ ] Verify the old unqualified URL is gone (it should 404 or DNS-fail), so
       nothing can reach `$LATEST` from the internet.
+      **Not verified - needs live AWS, out of scope here.**
 
 ---
 
