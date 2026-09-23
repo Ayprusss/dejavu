@@ -489,8 +489,11 @@ GB-seconds.
   The same CloudFront would also allow WAF rate limiting.
 - **A shared rate-limit store** (or WAF). The in-memory limiter is per
   execution environment, so concurrency multiplies the budget.
-- **Retry once on `28P01`** after `invalidate()`, so a rotation is invisible
-  to callers rather than one failed request.
+- **Retry once on `28P01`** after `invalidate()`. **Done in Phase 7**
+  (PR #32): `pool.js` retries the connection once with a re-fetched
+  password, so a stale cached password is one slower request rather than a
+  failed one. A request that lands mid-rotation, before the secret has the
+  new password, can still fail.
 - **VPC endpoints for the AWS calls** (SSM, Secrets Manager) at ~$7/month
   per endpoint per AZ, about $29 for two AZs. That takes the NAT off the
   cold-start path. It can't remove the NAT, though: Stripe is on the public
