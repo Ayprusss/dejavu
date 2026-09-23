@@ -67,6 +67,25 @@ plan's cost table. Watch for anything nonzero from RDS, EC2 (NAT) or the
 public IPv4 address. On the Free plan those should still be $0 while only dev
 runs.
 
+**Done 2026-09-23 (issue #23).** Run as a monthly query to 2026-09-23, which
+makes it a six-day sample: dev has been up since the 6.12 re-create (RDS
+`InstanceCreateTime` 2026-09-17T00:22Z).
+
+```
+aws ce get-cost-and-usage --time-period Start=2026-09-01,End=2026-09-23 \
+  --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE
+  -> every service line 0 (or a rounding artifact ~1e-8); total ~ -0.00000012 USD
+
+aws freetier get-account-plan-state
+  -> accountPlanRemainingCredits: 174.32 USD
+  -> accountPlanExpirationDate:   2027-03-10T22:53:06Z
+```
+
+Nothing nonzero from RDS, EC2 (NAT) or public IPv4. Recorded in
+`phase-6-steps.md`, `phase-7-steps.md` 7.0 and Cost, and the execution plan.
+That's one environment. Once prod is up in stage 8, the second set of
+instance hours goes past the free tier and draws down the credits.
+
 **Trim the dev apply role (optional).** Use the IAM console → Roles → the dev
 apply role → *Generate policy* from CloudTrail over the Phase 6 apply window.
 Write down the before and after statement counts in 7.0. Only change
@@ -294,7 +313,7 @@ Things that can go wrong here, and what they mean:
 |---|---|
 | `AccessDenied` during apply | Apply role gap. Fix in `modules/iam-oidc`, then re-run stage 2 |
 | Republish can't assume the deploy role | Stage 2's variables not set, or the trust `sub` doesn't match `environment:dev` |
-| Republish: `rollback target ... is no longer in ECR` | The live image (`57c6892`, hand-pushed in 6.12) was expired by the lifecycle policy. Deploy a known SHA with stage 6's dispatch instead |
+| Republish: `rollback target ... is no longer in ECR` | The live image (`57c6892`, hand-pushed in 6.12) was expired by the lifecycle policy. Deploy a known SHA with stage 6's local `deploy.sh` run instead |
 | `curl` to the new URL → **403** | The second permission statement (`InvokeFunction` + `InvokedViaFunctionUrl`) is wrong or missing. That's 7.2's open Verify |
 
 **Verify (7.2's open items):**
@@ -426,9 +445,11 @@ detection. Detection is 7.10's job.
 
 **First, check the RDS secret's rotation date** (issue #22). The master
 secret rotates weekly. For up to ~5 minutes after a rotation, a warm
-environment can fail one request with `28P01` (6.10). `smoke.sh` retries
-absorb one such failure (the harness proves it), but back-to-back failures
-while the rotation is still in progress could fail smoke and roll back a
+environment can hit a `28P01` (6.10). `pool.js` retries that connection
+once with a re-fetched password (logged as `db.auth_retry`), and `smoke.sh`'s
+retries are the backstop (the harness proves they absorb one failure). But
+while the rotation is still in progress the re-fetch returns the old password
+too. Back-to-back failures in that window could fail smoke and roll back a
 good deploy:
 
 ```bash
@@ -441,25 +462,42 @@ moved past it and then another 5 minutes (the password cache TTL). A
 rollback that happens during that window is suspect. Check the log for
 `28P01` before treating it as a real failure.
 
-Deploy a real CI-built SHA through `deploy.yml`, from the branch. Use `main`'s
-merge commit, which `push-image` already pushed to both repos:
+Run the deploy scripts **locally, with admin credentials**, against real dev
+(issue #21), not through `deploy.yml`. `workflow_dispatch` only works for a
+workflow that is on the default branch, so the branch's copy was never
+dispatchable (7.5). Since PR #28 a dispatch works, but only ever runs
+`main`'s copy. `migrate.sh` and `deploy.sh` are plain bash and need nothing
+from GitHub, so this still exercises publish → shift → smoke → prune against
+real AWS, and a failure here is the scripts, not the workflow or OIDC. The
+first `deploy.yml` run is the merge (stage 7).
+
+Deploy a real CI-built SHA: Phase 6's merge commit (`ba7fa35`, PR #6), which
+`push-image` already pushed to both repos:
 
 ```bash
-aws ecr describe-images --repository-name dejavu-api --image-ids imageTag=ba7fa3552954803280d7d3dc7da2ac6a0e9602a2 --query 'imageDetails[0].imagePushedAt'
-aws ecr describe-images --repository-name dejavu-migrator --image-ids imageTag=ba7fa3552954803280d7d3dc7da2ac6a0e9602a2 --query 'imageDetails[0].imagePushedAt'
+# admin credentials
+SHA=ba7fa3552954803280d7d3dc7da2ac6a0e9602a2
+aws ecr describe-images --repository-name dejavu-api --image-ids imageTag=$SHA --query 'imageDetails[0].imagePushedAt'
+aws ecr describe-images --repository-name dejavu-migrator --image-ids imageTag=$SHA --query 'imageDetails[0].imagePushedAt'
 
-gh workflow run deploy.yml --ref phase-7-cd \
-  -f environment=dev -f sha=ba7fa3552954803280d7d3dc7da2ac6a0e9602a2
+# what deploy.yml's env: block sets from the repo variables
+export AWS_REGION=us-east-1
+export ECR_API_REPO=059317926288.dkr.ecr.us-east-1.amazonaws.com/dejavu-api
+export ECR_MIGRATOR_REPO=059317926288.dkr.ecr.us-east-1.amazonaws.com/dejavu-migrator
+
+scripts/deploy/migrate.sh dev "$SHA"
+scripts/deploy/deploy.sh dev "$SHA"
 ```
 
-Expect the `deploy-dev` job to:
+Expect:
 
-- migrate: "no migrations to run" (the payload is printed in the log)
-- publish a new version and shift `live`
+- `migrate.sh`: "no migrations to run" (the payload is printed), then
+  `Migration succeeded`
+- `deploy.sh`: `Published version N`, then `Shifting the live alias to version N`
 - smoke: three checks, each timed, well under 15 s
-- write a job summary table with old version → new version and `Rolled back: false`
-
-`deploy-prod` should show as **skipped** (dispatch targeted dev).
+- `Pruning old versions ...` (nothing to prune yet), then `Outcome: ...`.
+  No job summary table: `GITHUB_STEP_SUMMARY` is unset locally, so the
+  `==>` lines are the record
 
 Then confirm by hand:
 
@@ -494,14 +532,42 @@ What happens on merge:
    applied), so no republish runs. If it isn't a no-op, find out why before
    anything else ships (the same rule as 6.13).
 2. **`CI` on `main`:** `push-image` pushes the merge SHA.
-3. **`Deploy`**, triggered by CI's `workflow_run`:
+3. **`Deploy`**, triggered by CI's `workflow_run`. This is the first
+   `deploy.yml` run of all (stage 6 ran the scripts locally):
    - `deploy-dev` migrates and deploys the merge SHA with no human action.
      **This is the first fully hands-off release.**
    - `deploy-prod` waits for approval. **Reject it.** Prod has no function
      yet, so it would fail at `promote-check` or `get-function`. Until
      stage 8, reject every prod approval.
 
+**If `Deploy` does not fire on the merge**, dispatch it by hand from `main`,
+and record here that it needed it:
+
+```bash
+gh workflow run deploy.yml --ref main -f environment=dev -f sha=<the merge sha>
+```
+
+`workflow_run` runs the default branch's copy of the workflow as it is when
+CI completes, which should be the merged copy. Confirm that ordering once
+rather than assuming it (issue #21).
+
 Afterwards, check that `/api/version` on dev shows the merge SHA.
+
+**Recorded (2026-09-23).** PR #28 (`61b9ee6`) was merged before stages 2
+and 4–6 had run. `Deploy` **did fire** from `workflow_run` (run
+`35820169626`), so no hand dispatch was needed to trigger it. `deploy-dev`
+then failed at "Assume the dev deploy role" with an empty `role-to-assume`:
+`AWS_DEPLOY_ROLE_ARN_DEV` doesn't exist until stage 2. `deploy-prod` was
+skipped. So the first **green** `deploy.yml` run is still to come. After
+stages 2 and 4–6, dispatch the command above with
+`sha=61b9ee684bc0cf0ac9a6447836e43dfba34691e4` (or let the next merge do it).
+That is a re-run after a failure, not the fallback above. On the same
+merge, `Terraform` / apply-dev planned `15 to add, 2 to change, 2 to
+destroy` but **skipped** `terraform apply`, because the plan step's
+`exitcode` output didn't read `2`. The first suspect is `setup-terraform`'s
+wrapper (`terraform_wrapper: true`) masking `-detailed-exitcode`. Dev is
+still pre-alias. That isn't item 1's no-op, so find out why before stage 4
+relies on the same job.
 
 ---
 
@@ -645,6 +711,13 @@ The full script is `phase-7-steps.md` 7.10. The shape:
 3. **Prod, for the record:** `gh workflow run deploy.yml -f environment=prod
    -f sha=$SHA -f drill=true`, then approve. The summary shows the DRILL
    MODE banner.
+   **Dispatch from `main`, not the drill branch** (issue #21). The
+   `production` environment's deployment branch policy lists only `main`, so
+   a run on `drill/broken-build` is refused before it reaches the approval.
+   The drill SHA is the `sha` input, not the ref. Leave `--ref` off (`gh`
+   defaults to the default branch, whatever is checked out) and never pass
+   `--ref drill/broken-build`. `dev` has no branch policy, but step 2 goes
+   from `main` too, so both runs use the same workflow and scripts.
 4. **Record** from the job log timestamps:
    - `update-alias` bad → `update-alias` back (the exposure window; the
      claim is ≤ ~10 s)
