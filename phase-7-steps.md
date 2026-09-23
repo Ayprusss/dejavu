@@ -47,9 +47,19 @@ them before Phase 7 builds on top of them.
       configuration.` 6.13's "if it isn't, find out why" doesn't apply. CI on
       `main` is green, so `push-image` has pushed `ba7fa35`-era images to
       both ECR repos. Confirm with `aws ecr describe-images`.
-- [ ] **48 h Cost Explorer re-check** (6.12). Fix the Phase 6 cost table with
+- [x] **48 h Cost Explorer re-check** (6.12). Fix the Phase 6 cost table with
       real numbers. Prod's cost decision in 7.1 depends on it, so do this
       one first.
+      Done 2026-09-23 (issue #23), as a six-day sample: dev has run since
+      the 6.12 re-create (RDS `InstanceCreateTime` 2026-09-17T00:22Z). Cost
+      Explorer, 2026-09-01 to 2026-09-23 by service: every line $0 (or a
+      ~1e-8 rounding artifact), total ≈ −$0.00000012. RDS, EC2 (NAT) and
+      public-IPv4 hours are all $0 under the free tier with one environment
+      up. Credits remaining **$174.32** (up from 6.12's $159.59); the plan
+      expires **2027-03-10T22:53:06Z**. That supports D5 but doesn't carry
+      over to two environments: see [Cost](#cost). Recorded in
+      `phase-6-steps.md` (6.12 and Cost) and the execution plan's cost
+      table.
 - [ ] **Trim the dev apply role with IAM Access Analyzer policy generation**
       (6.5, still unchecked). Record the before and after sizes. Optional, but
       7.3 adds another role, so this is the last cheap chance to learn what
@@ -72,8 +82,16 @@ them before Phase 7 builds on top of them.
       network error with the cart unchanged), a fresh key once the cart's
       signature changes or once a checkout redirects to Stripe. Covered by
       `dejavu/tests/checkoutAttempt.test.js`.
-- [ ] Execution plan's Verification table: rows 3 and 4 were never marked
+- [x] Execution plan's Verification table: rows 3 and 4 were never marked
       `[x]`, though both phases are done. Fix that in 7.11.
+      Done (issue #25), but only row 3 is a tick. Row 3 is ticked with its
+      evidence named, Phase 4's replay tests plus 6.8's duplicate delivery
+      against the real Function URL, because the local `stripe listen`
+      drill it describes was never run. Row 4 is **reworded, not ticked**:
+      it asked for a Playwright trace, and Playwright was deferred, so
+      ticking it as written would claim something that doesn't exist. It
+      now describes the 53 mutation-verified integration tests and is
+      re-checked in 7.12.
 
 ---
 
@@ -968,6 +986,12 @@ variable to the shipped code. A kill switch in prod code is its own bug.
       and 4 of the Verification table (7.0); add **"What Phase 7 actually
       turned up"**, keeping only the corrections that bit; and update the
       cost table for two environments.
+      Partly done (issues #23, #25): the Phase 7 section is rewritten
+      against D1–D10 and the corrections, "What Phase 7 actually turned up"
+      covers what's been found so far, rows 3 and 4 are fixed (see 7.0),
+      and the cost table covers both environments with the measured
+      numbers. Still open: marking Phase 7 and batch H `[x]`, which waits
+      for 7.10, and adding the drill's numbers to "turned up".
 - [ ] "What I'd do differently" for Phase 7. Candidates, keep the ones that
       turned out true: CodeDeploy canary once there's traffic to measure
       (D2); a pre-shift smoke against a candidate alias (D3); a stable
@@ -1120,9 +1144,12 @@ Cost Explorer numbers and correct them.
 **On this account (Free plan):** the free tier covers **one** `db.t4g.micro`
 for 750 h a month. Two RDS instances around the clock is 1,440 h, and the
 NAT and public-IPv4 hours double too, so with prod up the extra hours draw
-down the remaining credits ($159.59 at 6.12) rather than billing $0. At ~$25
-extra a month that's months of runway, not days. But it's no longer the "$0
-actually paid" story, and the budgets (7.8) should reflect it.
+down the remaining credits ($174.32 on 2026-09-23, measured in 7.0) rather
+than billing $0. At ~$25 extra a month that's about seven months of credit,
+but the Free plan itself expires on **2027-03-10**, about five and a half
+months out, so the expiry is the limit, not the balance. After that the
+list prices above are the bill. It isn't the "$0 actually paid" story any
+more, and the budgets (7.8) should reflect it.
 
 **D5's resting state:** both environments destroyed, with bootstrap, ECR and
 SSM kept, **and prod's final snapshot deleted**: ~$0.20/month. Keeping that

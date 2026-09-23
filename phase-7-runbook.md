@@ -59,6 +59,25 @@ plan's cost table. Watch for anything nonzero from RDS, EC2 (NAT) or the
 public IPv4 address. On the Free plan those should still be $0 while only dev
 runs.
 
+**Done 2026-09-23 (issue #23).** Run as a monthly query to 2026-09-23, which
+makes it a six-day sample: dev has been up since the 6.12 re-create (RDS
+`InstanceCreateTime` 2026-09-17T00:22Z).
+
+```
+aws ce get-cost-and-usage --time-period Start=2026-09-01,End=2026-09-23 \
+  --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE
+  -> every service line 0 (or a rounding artifact ~1e-8); total ~ -0.00000012 USD
+
+aws freetier get-account-plan-state
+  -> accountPlanRemainingCredits: 174.32 USD
+  -> accountPlanExpirationDate:   2027-03-10T22:53:06Z
+```
+
+Nothing nonzero from RDS, EC2 (NAT) or public IPv4. Recorded in
+`phase-6-steps.md`, `phase-7-steps.md` 7.0 and Cost, and the execution plan.
+That's one environment. Once prod is up in stage 8, the second set of
+instance hours goes past the free tier and draws down the credits.
+
 **Trim the dev apply role (optional).** Use the IAM console → Roles → the dev
 apply role → *Generate policy* from CloudTrail over the Phase 6 apply window.
 Write down the before and after statement counts in 7.0. Only change

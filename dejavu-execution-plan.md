@@ -24,7 +24,7 @@ Work proceeds in batches, each ending at a checkpoint for review before the next
 | — | *CI/CD complete. Everything to here costs $0.* | **Natural stopping point** |
 | **F** | 5 — Terraform + OIDC + secrets **[x]** | `plan` on PR with no AWS keys in the repo |
 | **G** | 6 — RDS + Lambda deploy **[x]** | Real Stripe webhook verifies against the Function URL |
-| **H** | 7 — Staging → prod CD | Broken build auto-rolls back |
+| **H** | 7 — Dev (staging) → prod CD **[~]** | Broken build auto-rolls back |
 
 Phase 2 is split because it is by far the largest — the scaffolding is low-risk and the rewrite is where the bugs hide, so they get separate review. Batch E is a genuine stopping point: the resume value of Phases 0–4 is high and the cost is nothing, so it's a reasonable place to pause and reassess appetite for the AWS half.
 
@@ -62,7 +62,7 @@ Phase 4  Integration + E2E in CI      roadmap #5b  ~1 week      [integration don
 -- CI/CD complete; everything above costs $0 --
 Phase 5  Terraform + OIDC + secrets   roadmap #3   ~1 week   [done]
 Phase 6  RDS + Lambda deploy          roadmap #2b/#4            [done; dev only]
-Phase 7  Staging -> prod CD           roadmap #6
+Phase 7  Dev (staging) -> prod CD     roadmap #6                [code done; not yet run on AWS]
 ```
 
 Phases 0–4 are specified in execution detail. Phases 5–7 are specified at decision level — the choices are made and justified, the implementation detail comes in a later pass once Phase 4 lands.
@@ -418,7 +418,7 @@ Adapter config: `AWS_LWA_PORT=5000`, `AWS_LWA_READINESS_CHECK_PATH=/api/status`,
 - **No provisioned concurrency.** It costs money to solve a latency problem you don't have. Measure the cold start and be able to quote it.
 - `db.t4g.micro` in a private subnet; SG allows 5432 **only from the Lambda SG** — security-group referencing rather than CIDR, because the CIDR is a static assertion about an address range while the SG reference follows the workload.
 - Automated backups with PITR — and **actually perform a restore once**, writing down the steps. An untested backup is a hypothesis.
-- CloudWatch log group with 14-day retention; `/version` endpoint returning the git SHA baked in at build time.
+- CloudWatch log group with 14-day retention; `/api/version` endpoint returning the git SHA baked in at build time.
 
 ### Frontend
 
@@ -504,17 +504,171 @@ GB-seconds.
 
 ---
 
-# Phase 7 — Staging → Production CD with Rollback
+# Phase 7 — Dev (Staging) → Production CD with Rollback [~]
 
-*Roadmap #6.*
+*Roadmap #6.* Code complete and merged (PR #28); **not yet run against
+AWS.** The bootstrap apply, prod, the alarms' live checks and the checkpoint
+drill are all still ahead, each tracked by a `needs-human` issue (#7, #9,
+#10, #14–#20). The step-by-step record, with the ten decisions (D1–D10) and
+twelve corrections, is `phase-7-steps.md`; what to type, and in what order,
+is `phase-7-runbook.md`.
 
-- Merge to `main` → build, tag by SHA, push to ECR, auto-deploy to **dev**. Production requires manual approval on a protected environment.
-- **Migrations run as an explicit pre-deploy step, via a dedicated migrator Lambda** invoked by the pipeline. This keeps migrations inside the VPC and avoids a bastion or an SSM tunnel from CI — the tidy answer to "how does CI reach a private database?"
-- **Expand/contract is mandatory,** because migrations run *before* the new code. Old code is briefly running against the new schema, so every migration must be backward-compatible with the version currently deployed. Renaming a column is three deploys: add the new column and dual-write; backfill and switch reads; drop the old column.
-- **Rollback via Lambda alias.** Publish a version, shift the alias, smoke-test, and on failure shift the alias back to the previous version. Note what this does *and does not* do: it reverts code, not schema. Expand/contract is what makes that safe — and it's why a contract migration should never ship in the same deploy as the code that stops using the column.
-- **Smoke test,** under ~10 seconds: `/api/status` returns 200, `/version` matches the SHA just deployed, `GET /api/products` returns 200 with at least one item. Not more — a slow smoke test is a slow rollback, and rollback speed is the thing you're actually buying.
-- **Alarms** → SNS email: 5xx rate, Lambda errors and throttles, failed-checkout count via a metric filter on the structured logs from Phase 3.
-- **Staging shares nothing with production** — separate RDS instance, separate secrets, separate state. Decide and document what that costs; the cheap version is a staging DB that only exists during a deploy window.
+### The pipeline
+
+- **Dev is staging (D1).** A third environment would cost another ~$25/month
+  and prove nothing dev doesn't. Merge to `main` → CI → `deploy.yml`, fired
+  by `workflow_run` and deploying the `head_sha` CI built (never
+  `github.sha`) → migrate and deploy **dev (staging)** with no human. Prod
+  gets the **same SHA** after a required reviewer on the protected
+  `production` environment, and `promote-check.sh` resolves both
+  environments' images to digests and fails if prod would run anything dev
+  didn't (D4). While dev is destroyed its deploy is skipped, not failed, and
+  prod never promotes off a skipped dev (D9).
+- **Migrations run first, inside the VPC, through the migrator Lambda**
+  (`migrate.sh`), so CI never needs a route to the private database.
+  `aws lambda invoke` exits 0 when the handler throws, so the script fails
+  on `FunctionError` rather than the exit code (correction 5), and it turns
+  off the CLI's retry-on-timeout that would run a slow migration twice
+  (correction 6).
+- **Expand/contract is mandatory,** because migrations run before the new
+  code and the previous release keeps running against the new schema for as
+  long as a rollback might last. The rule and the three-deploy rename are in
+  `backend/MIGRATIONS.md`. CI catches the accident, not the deliberate
+  choice: an added migration with `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`
+  or `SET NOT NULL` fails without a `-- contract: <why>` line, and editing
+  or deleting an existing migration fails outright. Verified by mutation.
+- **Rollback via the `live` alias, from a pipeline script rather than
+  CodeDeploy (D2).** The Function URL moves onto the alias, which creates a
+  new URL (correction 1). `deploy.sh` records the previous version and
+  refuses to deploy if that version's image has expired from ECR
+  (correction 8), then publishes, shifts, smoke-tests, and on failure
+  shifts back and smoke-tests the rollback too. It reverts code, not
+  schema; expand/contract is what makes that safe. A published version
+  freezes its environment, so a config-only Terraform apply is followed by
+  a republish of the live SHA (correction 2), and Terraform and the deploy
+  share one non-cancelling concurrency group per environment
+  (correction 4).
+- **Shift, then smoke-test the public URL (D3).** Three checks, hard ~15 s
+  budget: `/api/status` 200, `/api/version` equal to the SHA just deployed,
+  `GET /api/products` 200 with at least one item. Testing a candidate
+  before the shift would need a second public URL, or would skip the URL →
+  adapter path that 6.8 proved. The price is a window of ≤ ~10 s where a
+  broken build is live, and a webhook that lands in it gets a retryable
+  500. That window is the number 7.10 measures.
+- **Alarms → one SNS email topic per environment (D10):** 5xx on the live
+  alias, Lambda errors (api and migrator), throttles, and
+  `checkout.oversell` plus failed checkouts through metric filters on the
+  Phase 3 event keys. Every alarm has `ok_actions`, so the drill's inbox
+  shows the rollback clearing it.
+- **A deploy role per environment, separate from apply (D8).** It can touch
+  two functions and read two ECR repos, nothing else. Both prod roles
+  present the same OIDC subject, so the split is least privilege for
+  mistakes, not a security boundary (correction 12).
+
+### Prod shares nothing with dev (D5)
+
+Separate VPC (`10.30.0.0/16`), NAT, RDS, SSM path, RDS secret, state key,
+workload role, Stripe webhook endpoint and SNS topic. Shared: the account,
+ECR (by design, so D4 can compare digests), and the account's 10-execution
+Lambda concurrency ceiling, which a dev retry storm can use up for prod
+(correction 10; D7 requests a quota increase and records the answer). Prod
+runs Stripe **test mode** (D6), so the approval gate protects prod's data,
+not real money. Prod's RDS has deletion protection and a final snapshot, and
+its first admin comes from a `grant-admin` migrator action on an
+already-registered user, because the seed truncates and refuses outside dev
+(correction 9).
+
+The cost answer: ~$50/month at list price with both environments up, and
+prod doesn't run around the clock. It's up for the build-out and the
+drills, then both go back to the ~$0.20 resting state ([Cost](#cost)).
+*Considered and rejected:* a staging DB that only exists during a deploy
+window, which would put ~13 minutes of RDS creation into every merge; and
+prod reusing dev's VPC and NAT, which saves ~$10/month but turns "shares
+nothing" into "shares its egress and its failure mode".
+
+### What Phase 7 actually turned up
+
+*So far, from building it and from auditing the docs against the live repo.
+None of it comes from a run against AWS; the drill's numbers go here once
+7.10 has run.*
+
+**The Phase 1 gate had lapsed.** `main` had no branch protection and no
+ruleset (issue #20), most likely since Phase 0's `git filter-repo`
+force-push, so Verification row 1's tick had been false for most of the
+project. It matters more now than it did in Phase 1: once `deploy.yml` is
+on `main`, a direct push auto-deploys dev with nothing in front of it. Row 1
+stays unticked until a failing-test PR is blocked again.
+
+**The first real `deploy.yml` run was the merge, and it stopped at
+credentials.** `workflow_dispatch` only works for a workflow already on the
+default branch, and the `production` environment only accepts `main`, so
+the pipeline couldn't be proven from `phase-7-cd` the way 6.7 proved the
+first apply (issue #21). The PR #28 merge fired `deploy.yml` through
+`workflow_run` as designed, and it went red at
+`configure-aws-credentials`: `AWS_DEPLOY_ROLE_ARN_DEV` isn't set, because
+the bootstrap apply that creates the deploy roles (runbook stage 2) hasn't
+run. The same merge's `apply-dev` planned 15 to add, 2 to change and 2 to
+destroy, then skipped its `terraform apply` step and finished green, so dev
+is still on its Phase 6 shape and URL. That green-with-nothing-applied is
+not yet diagnosed.
+
+**An alias on `$LATEST` looks like a rollback target and isn't one.**
+Terraform creates `live` pointing at `$LATEST`, because `publish = true`
+would have published an unsmoked version on every config-only apply, and
+every re-create puts it back there. `$LATEST` is the code about to be
+overwritten, so `deploy.sh` first pins whatever it's running to a real
+version and uses that as the rollback target.
+
+**A README broke every migration run.** node-pg-migrate reads every file in
+`backend/migrations/`, and the expand/contract write-up failed every run
+with `Cannot determine numeric prefix for "README.md"`. The integration
+suite found it on the combined branch; it's `backend/MIGRATIONS.md` now.
+Reading the runner's source also settled what a half-failed deploy leaves
+behind: one transaction per migration, not one for the run (the type
+definitions' `@default true` notwithstanding), so the schema stops at
+"every migration before the failing one" and is never partly applied.
+
+**The weekly secret rotation can roll back a good deploy.** After a
+rotation, a warm environment's next new connection fails with `28P01` and
+`/api/products` returns 500, which fails smoke (issue #22). Smoke's retries
+absorb it, because the `28P01` fails fast and the retry lands after
+`invalidate()`. The deploy-script harness proves it: 30/30 cases against a
+fake `aws`, mutation-tested. Retries can't cover a rotation still in
+progress, so the drill checks `NextRotationDate` first.
+
+**Teardown leaves two things behind.** The SNS subscription lives in each
+environment's state, so every re-create brings it back as
+`PendingConfirmation`, and alarms route nowhere until the email link is
+clicked (issue #24; accepted, and on the re-create checklist with a command
+that checks it). Prod's final RDS snapshot survives the destroy and bills,
+up to ~$1.90/month, with no instance left to give it a free allowance
+(issue #26; deleted once the teardown is verified).
+
+**Two environments end the "$0 actually paid" story.** Measured on
+2026-09-23, dev alone bills $0 under the free tier. The free tier's 750
+instance-hours a month cover one instance around the clock, not two
+(correction 11), so prod's hours draw down credits. See [Cost](#cost).
+
+**Research stands in for four live checks.** Each of these came from AWS
+docs or provider source, not a real call: a `NONE`-auth Function URL now
+needs a second `lambda:InvokeFunction` statement conditioned on
+`InvokedViaFunctionUrl`; the 5xx alarm's `Resource` dimension for a
+qualified URL is `dejavu-<env>-api:live`; a container image under the Web
+Adapter ships pino's JSON lines to CloudWatch unprefixed, so
+`{ $.event = "..." }` matches them; and `function:<name>:*` in IAM matches
+every qualified ARN and never the bare function, so the deploy role's
+version pruning can't delete the function itself. `phase-7-steps.md` names
+the live check owed for each one. An alarm on a metric that never exists is
+silently green forever, so none of these counts as done until its check
+has run.
+
+**Exit criteria [ ]:** deploy a deliberately broken build → the smoke test
+fails → the alias reverts on its own → an alarm emails ALARM and then OK,
+with the exposure window measured (Verification row 7, 7.10). **Not run.**
+
+*Verified so far, code only: CI green on the merge commit `61b9ee6`; 53
+integration tests; the deploy-script harness at 30/30; shellcheck and
+actionlint clean; the migration guard mutation-verified.*
 
 ---
 
@@ -527,8 +681,8 @@ Each phase has a concrete gate:
 | 0 | **[x]** `git ls-files \| grep -c node_modules` → 0. App refuses to boot without `JWT_SECRET`. GitHub secret scanning shows no active alerts. |
 | 1 | **[ ]** Open a PR with a deliberately failing test — merge is blocked. `npm test` green in both workspaces. *(The gate lapsed: `main` had no protection or ruleset as of 2026-09-23, issue #20. It's re-enabled and re-verified in `phase-7-runbook.md` stage 1b. Tick this when that's done.)* |
 | 2 | **[x]** `docker compose up` → migrate → seed → browse the storefront end to end. `npm run migrate:down` unwinds cleanly. `grep -r supabase backend/src` → nothing. |
-| 3 | Manually replay a webhook twice against local Postgres → one order. `stripe trigger checkout.session.completed` against a local `stripe listen`. |
-| 4 | Idempotency, oversell, and out-of-order tests green in CI against a real Postgres service container. Playwright trace artifact on a deliberate failure. |
+| 3 | **[x]** A replayed webhook produces exactly one order. *Met by other evidence, not by the local drill first written here (replay twice against local Postgres through a local `stripe listen`), which was never run:* Phase 4's `backend/tests/integration/webhook.test.js` ("processes one event exactly once across three deliveries" and "…across two concurrent deliveries"), signed with `generateTestHeaderString` and run against real Postgres in CI, and mutation-verified: reverting the event claim to read-then-write fails the idempotency tests. Then 6.8, against the real Function URL: a real `stripe trigger checkout.session.completed` → one `order.created`, and the captured payload re-signed and POSTed twice with the same event id → `webhook.duplicate` both times. |
+| 4 | **[ ]** Idempotency, oversell, and out-of-order tests green in CI against a real Postgres service container: 53 integration tests across five files (Phase 4's 49, plus 4 for 7.9's `grant-admin`), with the idempotency and no-oversell claims mutation-verified (Phase 4). *Reworded: this row also asked for a Playwright trace artifact on a deliberate failure. Playwright was deferred (Phase 4, E2E), so that half is dropped rather than ticked, and 7.12's "Known limitations" carries the deferral. Left unticked until 7.12 re-runs `npm run test:all` on the final `main` and records the counts.* |
 | 5 | **[x]** `terraform plan` runs on a PR with no AWS keys in the repo. Confirm the role cannot be assumed from a fork. |
 | 6 | **[x]** Real Stripe webhook to the Function URL verifies its signature. Restore the database from PITR and document the steps. |
 | 7 | Deploy a deliberately broken build → smoke test fails → alias auto-reverts → alarm fires. |
@@ -541,22 +695,43 @@ Each phase has a concrete gate:
 
 ## Cost
 
-| Item | Monthly |
-|---|---|
-| Phases 0–5 | **$0** — local, GitHub Actions (free on public repos), S3 state, IAM, SSM Parameter Store |
-| `db.t4g.micro` RDS + 20 GB gp3 | ~$14 |
-| NAT instance `t4g.micro` + its public IPv4 + root volume | ~$10.50 |
-| Secrets Manager (1 secret) + ECR storage | ~$0.60 |
-| Lambda + CloudWatch | ~$0–1 at this traffic |
-| **Total once Phase 6 lands (list price)** | **~$25–26**, → ~$0.20 with a targeted `terraform destroy` between demos |
+List prices, us-east-1, per month, around the clock.
 
-**What this account actually paid:** $0. It's on the AWS Free plan, which
-covers the RDS, NAT and IPv4 hours; month-to-date usage of $0.41 was absorbed
-by credits. The table is what a paid account would see. A 48-hour Cost
-Explorer re-check is still owed.
+| Item | Dev (staging) | Prod |
+|---|---|---|
+| Phases 0–5 | **$0** — local, GitHub Actions (free on public repos), S3 state, IAM, SSM Parameter Store | — |
+| `db.t4g.micro` RDS + 20 GB gp3 + backups | ~$14 | ~$14 |
+| NAT instance `t4g.micro` + its public IPv4 + root volume | ~$10.50 | ~$10.50 |
+| Secrets Manager (the RDS secret) | $0.40 | $0.40 |
+| ECR storage (shared, both repos) | ~$0.20 | — |
+| Lambda, CloudWatch Logs, alarms, SNS email | ~$0–1 at this traffic | ~$0–1 |
+| **Total** | **~$25–26** | **~$25** |
+| **Both up** | **~$50/month (~$1.65/day)** | |
+| **Resting state:** both destroyed, bootstrap + ECR + SSM kept | **~$0.20/month**, assuming prod's final RDS snapshot is deleted after teardown (up to ~$1.90/month more if it's kept; issue #26) | |
+
+**What this account actually pays, measured 2026-09-23:** $0 with one
+environment up. Cost Explorer for 2026-09-01 to 2026-09-23, grouped by
+service, shows every line at $0 (or a ~1e-8 rounding artifact), total
+≈ −$0.00000012: the RDS, EC2 (NAT) and public-IPv4 hours are all covered by
+the AWS Free plan's free tier. That's a six-day sample, not the 48 h first
+planned, since dev has run continuously since the 6.12 re-create (RDS
+`InstanceCreateTime` 2026-09-17T00:22Z). `freetier get-account-plan-state`
+reports **$174.32** in credits remaining (higher than 6.12's $159.59) and
+the plan expiring **2027-03-10T22:53:06Z**.
+
+**With prod up, it's no longer free: prod draws credits.** The free tier's 750
+instance-hours a month cover one `db.t4g.micro` around the clock, not two
+(1,440 h), and the NAT and public-IPv4 hours double too. So prod's hours
+draw down the credits instead. At ~$25 a month beyond the free tier,
+$174.32 lasts about seven months, which is longer than the five and a half
+left on the plan. The real limit is the expiry on 2027-03-10, not the
+balance, and after it the list-price table is the bill. D5 keeps prod down
+between drills in any case.
 
 `terraform destroy` after a demo (~20 min), `apply` before an interview (~13
 min to a verified webhook); the runbook is in `terraform/README.md`. The dev
 budget alarms at $30, with a $40 account-wide backstop, because a $5 budget
 watching the whole account would have fired on day one and been ignored
-from then on.
+from then on. The same logic applies again with prod: both environments at
+list price is ~$50, over the $40 backstop, so 7.8 either raises it or
+records that it fires during the prod window.
