@@ -59,6 +59,25 @@ plan's cost table. Watch for anything nonzero from RDS, EC2 (NAT) or the
 public IPv4 address. On the Free plan those should still be $0 while only dev
 runs.
 
+**Done 2026-09-23 (issue #23).** Run as a monthly query to 2026-09-23, which
+makes it a six-day sample: dev has been up since the 6.12 re-create (RDS
+`InstanceCreateTime` 2026-09-17T00:22Z).
+
+```
+aws ce get-cost-and-usage --time-period Start=2026-09-01,End=2026-09-23 \
+  --granularity MONTHLY --metrics UnblendedCost --group-by Type=DIMENSION,Key=SERVICE
+  -> every service line 0 (or a rounding artifact ~1e-8); total ~ -0.00000012 USD
+
+aws freetier get-account-plan-state
+  -> accountPlanRemainingCredits: 174.32 USD
+  -> accountPlanExpirationDate:   2027-03-10T22:53:06Z
+```
+
+Nothing nonzero from RDS, EC2 (NAT) or public IPv4. Recorded in
+`phase-6-steps.md`, `phase-7-steps.md` 7.0 and Cost, and the execution plan.
+That's one environment. Once prod is up in stage 8, the second set of
+instance hours goes past the free tier and draws down the credits.
+
 **Trim the dev apply role (optional).** Use the IAM console → Roles → the dev
 apply role → *Generate policy* from CloudTrail over the Phase 6 apply window.
 Write down the before and after statement counts in 7.0. Only change
@@ -418,9 +437,11 @@ detection. Detection is 7.10's job.
 
 **First, check the RDS secret's rotation date** (issue #22). The master
 secret rotates weekly. For up to ~5 minutes after a rotation, a warm
-environment can fail one request with `28P01` (6.10). `smoke.sh` retries
-absorb one such failure (the harness proves it), but back-to-back failures
-while the rotation is still in progress could fail smoke and roll back a
+environment can hit a `28P01` (6.10). `pool.js` retries that connection
+once with a re-fetched password (logged as `db.auth_retry`), and `smoke.sh`'s
+retries are the backstop (the harness proves they absorb one failure). But
+while the rotation is still in progress the re-fetch returns the old password
+too. Back-to-back failures in that window could fail smoke and roll back a
 good deploy:
 
 ```bash
