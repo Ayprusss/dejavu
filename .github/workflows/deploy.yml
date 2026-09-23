@@ -1,0 +1,226 @@
+name: Deploy
+
+# 7.5: a merge to main ships the SHA CI built to dev (staging, D1) with no
+# human action. The same image reaches prod only after a human approves,
+# via the `production` GitHub environment's required reviewer. See
+# phase-7-steps.md 7.1 (decisions D1-D10) and "Corrections to the execution
+# plan" for why the two jobs below are shaped the way they are.
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        required: true
+        type: choice
+        options: [dev, prod]
+      sha:
+        description: Git SHA to deploy (must already be tagged in both ECR repos)
+        required: true
+        type: string
+      drill:
+        description: >-
+          7.10 drill only: bypass promote-check.sh's dev/prod digest match, so
+          a hand-pushed drill image can reach prod. Still requires the prod
+          approval gate below. Never set this for a real promotion.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Consumed by scripts/deploy/*.sh (7.4). The vars already exist on the repo.
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_API_REPO: ${{ vars.ECR_API_REPO }}
+  ECR_MIGRATOR_REPO: ${{ vars.ECR_MIGRATOR_REPO }}
+
+jobs:
+  deploy-dev:
+    name: deploy-dev
+    # Two ways in: (1) CI just went green on a push to main - the automatic
+    # staging deploy D1 describes, dev gets every merge with no human action.
+    # (2) a manual dispatch that explicitly targets dev (re-deploy a known
+    # SHA, roll a fix forward, or the 7.10 rehearsal). A dispatch targeting
+    # prod does NOT run this job at all - it is skipped by design, which is
+    # different from the D9 runtime skip below. See deploy-prod's `if` for
+    # how the two are told apart.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    environment: dev
+    # Correction 4: terraform.yml's apply-dev can be mid config-update on this
+    # same Lambda at the moment a merge lands here. Lambda refuses a code
+    # update while a config update is in progress (ResourceConflictException),
+    # so both workflows queue on one shared group per environment instead of
+    # racing. Job-level (not workflow-level), so a prod approval that sits for
+    # hours never blocks dev.
+    concurrency:
+      group: dejavu-deploy-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      # deploy-prod reads this to tell "dev had nothing to deploy" (D9) apart
+      # from "dev deployed successfully" - both are result: success.
+      skipped: ${{ steps.check.outputs.skipped }}
+    env:
+      # Never github.sha: in a workflow_run run it is main's *current* head,
+      # which can already have moved past the commit CI actually built and
+      # pushed to ECR. head_sha is that commit (7.5). A dispatch names its own.
+      SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        # No `ref:` on purpose. The deploy *logic* comes from the workflow's
+        # own commit (main); only the *image* comes from $SHA. A rollback or
+        # the 7.10 drill targets SHAs whose tree may predate scripts/deploy/.
+
+      # No access keys - this exchanges the job OIDC token for credentials
+      # that expire in an hour, the same pattern terraform.yml and
+      # ci.yml's push-image already use.
+      - name: Assume the dev deploy role
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: dejavu-deploy-dev-${{ github.run_id }}
+
+      # D9: dev is destroyed between drills (D5's resting state). A missing
+      # function means "nothing to deploy" and the job stays green. Any other
+      # failure here is real and must fail the job - prod never takes this
+      # path at all (see deploy-prod's `if`).
+      - name: Check dejavu-dev-api exists (D9)
+        id: check
+        run: |
+          set +e
+          aws lambda get-function --function-name dejavu-dev-api \
+            >/tmp/get-function.json 2>/tmp/get-function.err
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -q "ResourceNotFoundException" /tmp/get-function.err; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### dev deploy skipped"
+              echo
+              echo "\`dejavu-dev-api\` does not exist - dev is at D5's resting"
+              echo "state (destroyed). Nothing to deploy; this is expected,"
+              echo "not a failure."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::dejavu-dev-api not found - dev is destroyed, skipping deploy (D9)"
+            exit 0
+          fi
+          echo "::error::Unexpected error checking dejavu-dev-api"
+          cat /tmp/get-function.err
+          exit "$status"
+
+      - name: Migrate dev
+        if: steps.check.outputs.skipped != 'true'
+        run: scripts/deploy/migrate.sh dev "$SHA"
+
+      - name: Deploy dev
+        if: steps.check.outputs.skipped != 'true'
+        run: scripts/deploy/deploy.sh dev "$SHA"
+
+  deploy-prod:
+    name: deploy-prod
+    needs: deploy-dev
+    # Why a manual gate when the rest of the pipeline is automatic (the
+    # roadmap asks this explicitly): the smoke test only proves what it
+    # checks - three HTTP calls in a ~10s window (D3). It cannot tell "this is
+    # the change we meant to ship" from "this build answers 200". The gate is
+    # where a human looks at dev after a real click-through (7.0) and decides
+    # the change is one they meant to ship to the environment with real
+    # users. Dev gets the same brief bad-build exposure and an automatic
+    # rollback instead of a person; prod gets a person instead of that
+    # exposure. (On a Free-plan *private* repo this required-reviewer gate
+    # would not enforce at all - Phase 5's finding - which is part of why
+    # this repo stays public.)
+    #
+    # `needs: deploy-dev` alone is not enough to express the rule "don't
+    # promote what dev didn't verify": GitHub also skips a job whose `needs`
+    # was itself skipped, and deploy-dev is skipped *by design* when a
+    # workflow_dispatch targets prod directly - that case must still let
+    # deploy-prod run. D9's *runtime* skip (dev has no function to deploy to)
+    # must not - there is nothing dev verified to promote in that case. A bare
+    # `needs.deploy-dev.result == 'success'` cannot tell these apart, so
+    # `always()` plus the explicit checks below do it instead:
+    #   - job-level skip (dispatch targeted prod): result == 'skipped',
+    #     outputs.skipped is unset -> allowed through.
+    #   - D9 runtime skip (dev destroyed): result == 'success',
+    #     outputs.skipped == 'true' -> blocked.
+    #   - a real dev failure: result == 'failure' -> blocked.
+    # On workflow_run, dev must have actually *succeeded*: if CI itself failed,
+    # deploy-dev is job-level skipped too, and "skipped" must not read as
+    # "allowed through" there, or a red CI run would queue a prod approval.
+    if: >-
+      always() &&
+      ((github.event_name == 'workflow_run' &&
+        needs.deploy-dev.result == 'success' &&
+        needs.deploy-dev.outputs.skipped != 'true') ||
+       (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'))
+    runs-on: ubuntu-latest
+    # The protected one. A required reviewer here is the only thing standing
+    # between this job and prod, because the OIDC token does not carry
+    # environment:production until that approval is given - same mechanism
+    # terraform.yml's apply-prod already relies on.
+    environment: production
+    concurrency:
+      group: dejavu-deploy-prod
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        # No `ref:` on purpose. The deploy *logic* comes from the workflow's
+        # own commit (main); only the *image* comes from $SHA. A rollback or
+        # the 7.10 drill targets SHAs whose tree may predate scripts/deploy/.
+
+      - name: Assume the prod deploy role
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_PROD }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: dejavu-deploy-prod-${{ github.run_id }}
+
+      # D4: prod runs the exact image digest dev verified, never a rebuild.
+      # Skipped only for the 7.10 checkpoint drill, whose entire point is a
+      # hand-pushed image dev never ran (dejavu-gha-push trusts only
+      # refs/heads/main, so a drill image can't get to ECR any other way).
+      # The bypass is loud in the job summary, never silent, and the check
+      # itself is never weakened.
+      - name: Promote-check (D4)
+        if: inputs.drill != true
+        run: scripts/deploy/promote-check.sh "$SHA"
+
+      - name: Drill notice - promote-check bypassed (7.10)
+        if: inputs.drill == true
+        run: |
+          {
+            echo "## :rotating_light: DRILL MODE"
+            echo
+            echo "promote-check.sh was bypassed for SHA \`$SHA\`. Prod is"
+            echo "about to run an image dev never verified. This must only"
+            echo "happen for the 7.10 checkpoint drill, never a real promotion."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::DRILL MODE - promote-check bypassed for $SHA"
+
+      - name: Migrate prod
+        run: scripts/deploy/migrate.sh prod "$SHA"
+
+      - name: Deploy prod
+        run: scripts/deploy/deploy.sh prod "$SHA"

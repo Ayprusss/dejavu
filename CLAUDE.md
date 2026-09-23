@@ -156,8 +156,13 @@ rotation, PITR restore and destroy/re-apply runbooks).
     extension; runs the ordinary Express server. `docker-compose.yml` builds
     this same target locally.
   - `migrator` — AWS Lambda Node base image; handler `src/migrator.handler`.
-    Accepts only `{"action":"up"}` and `{"action":"seed"}` (seed refuses
-    unless `DEPLOY_ENV=dev`). There is no `down` by payload, on purpose.
+    Accepts `{"action":"up"}`, `{"action":"seed"}` (seed refuses unless
+    `DEPLOY_ENV=dev`), and `{"action":"grant-admin","email":"..."}` (sets
+    `isAdmin = true` on an already-registered user, matched case-insensitively
+    like login; allowed in any `DEPLOY_ENV`; refuses on a missing/malformed or
+    unknown email rather than a silent no-op; idempotent if already an admin;
+    logs `admin.granted` with the user id, never the email). There is no
+    `down` by payload, on purpose.
 - **Entrypoint:** the api image runs `src/lambda.js`, not `server.js`. When
   `SSM_PARAMETER_PATH` is set it loads those parameters into `process.env`
   (and `DB_USER` from the RDS secret) *before* `config/env.js` is required,

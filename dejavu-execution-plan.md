@@ -525,7 +525,7 @@ Each phase has a concrete gate:
 | Phase | How to verify |
 |---|---|
 | 0 | **[x]** `git ls-files \| grep -c node_modules` → 0. App refuses to boot without `JWT_SECRET`. GitHub secret scanning shows no active alerts. |
-| 1 | **[x]** Open a PR with a deliberately failing test — merge is blocked. `npm test` green in both workspaces. |
+| 1 | **[ ]** Open a PR with a deliberately failing test — merge is blocked. `npm test` green in both workspaces. *(The gate lapsed: `main` had no protection or ruleset as of 2026-09-23, issue #20. It's re-enabled and re-verified in `phase-7-runbook.md` stage 1b. Tick this when that's done.)* |
 | 2 | **[x]** `docker compose up` → migrate → seed → browse the storefront end to end. `npm run migrate:down` unwinds cleanly. `grep -r supabase backend/src` → nothing. |
 | 3 | Manually replay a webhook twice against local Postgres → one order. `stripe trigger checkout.session.completed` against a local `stripe listen`. |
 | 4 | Idempotency, oversell, and out-of-order tests green in CI against a real Postgres service container. Playwright trace artifact on a deliberate failure. |

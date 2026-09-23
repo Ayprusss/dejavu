@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+#
+# Fake `curl` for scripts/deploy/test/run.sh - only supports the exact
+# invocation smoke.sh makes (-sS -o FILE -w '%{http_code}' -m N URL).
+# Answers by consulting the same $FAKE_AWS_STATE_DIR fake aws writes to, so
+# hitting "the function URL" reflects whatever the alias currently points at
+# - the same coupling a real deploy relies on to prove the shift worked.
+set -euo pipefail
+
+: "${FAKE_AWS_STATE_DIR:?FAKE_AWS_STATE_DIR must be set for the fake curl}"
+
+OUTFILE=""
+FULLURL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o)
+      OUTFILE="$2"
+      shift 2
+      ;;
+    -w | -m)
+      shift 2
+      ;;
+    -*)
+      shift
+      ;;
+    *)
+      FULLURL="$1"
+      shift
+      ;;
+  esac
+done
+
+PATH_PART=""
+BASE_URL="$FULLURL"
+for suffix in /api/status /api/version /api/products; do
+  case "$FULLURL" in
+    *"$suffix")
+      PATH_PART="$suffix"
+      BASE_URL="${FULLURL%"$suffix"}"
+      break
+      ;;
+  esac
+done
+
+FN=""
+for url_file in "$FAKE_AWS_STATE_DIR"/functions/*/url; do
+  [ -e "$url_file" ] || continue
+  if [ "$(cat "$url_file")" = "$BASE_URL" ]; then
+    FN="$(basename "$(dirname "$url_file")")"
+    break
+  fi
+done
+
+if [ -z "$FN" ]; then
+  echo "fake curl: no function registered for URL '$BASE_URL'" >&2
+  exit 7 # curl's own "failed to connect" exit code
+fi
+
+DIR="$FAKE_AWS_STATE_DIR/functions/$FN"
+VERSION="$(cat "$DIR/alias_live" 2>/dev/null || echo '$LATEST')"
+if [ "$VERSION" = '$LATEST' ]; then
+  SRC="$DIR/latest.json"
+else
+  SRC="$DIR/versions/$VERSION.json"
+fi
+
+SHA="$(jq -r '.sha' "$SRC" 2>/dev/null || echo "unknown")"
+BOOT_BROKEN="$DIR/versions/$VERSION.boot-broken"
+PRODUCTS_BROKEN="$DIR/versions/$VERSION.products-broken"
+# Holds a count N: the next N /api/products calls 500, then it's healthy again.
+# Models the weekly RDS rotation blip (issue #22, 6.10 run 2): one 28P01 per
+# warm environment, surfaced by productController as a 500, then recovery on
+# the very next request once pool.js has called invalidate().
+PRODUCTS_TRANSIENT="$DIR/versions/$VERSION.products-transient"
+
+STATUS=200
+BODY='{}'
+
+if [ -f "$BOOT_BROKEN" ]; then
+  # Second drill (7.10): the adapter's readiness check never passes, so
+  # every path 5xx's, including /api/status.
+  STATUS=502
+  BODY='{"message":"bad gateway"}'
+else
+  case "$PATH_PART" in
+    /api/status)
+      STATUS=200
+      BODY='{"status":"ok"}'
+      ;;
+    /api/version)
+      STATUS=200
+      BODY="$(printf '{"sha":"%s"}' "$SHA")"
+      ;;
+    /api/products)
+      if [ -f "$PRODUCTS_BROKEN" ]; then
+        # First drill (7.10): the controller throws, not the route, so it's
+        # a 500 with a normal JSON error body, not a crash.
+        STATUS=500
+        BODY='{"message":"Internal server error"}'
+      elif [ -f "$PRODUCTS_TRANSIENT" ] && [ "$(cat "$PRODUCTS_TRANSIENT")" -gt 0 ]; then
+        REMAINING="$(cat "$PRODUCTS_TRANSIENT")"
+        echo "$((REMAINING - 1))" >"$PRODUCTS_TRANSIENT"
+        STATUS=500
+        BODY='{"message":"Internal server error"}'
+      else
+        STATUS=200
+        BODY='[{"id":"11111111-1111-1111-1111-111111111111"}]'
+      fi
+      ;;
+    *)
+      STATUS=404
+      BODY='{"message":"not found"}'
+      ;;
+  esac
+fi
+
+printf '%s' "$BODY" >"$OUTFILE"
+printf '%s' "$STATUS"

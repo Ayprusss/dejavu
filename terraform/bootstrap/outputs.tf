@@ -44,3 +44,18 @@ output "workload_role_arn_dev" {
   description = "Lambda execution role for dev - consumed by envs/dev's modules/lambda."
   value       = module.workload_roles.workload_role_arns["dev"]
 }
+
+output "workload_role_arn_prod" {
+  description = "Lambda execution role for prod - consumed by envs/prod's modules/lambda. Set as AWS_WORKLOAD_ROLE_ARN_PROD."
+  value       = module.workload_roles.workload_role_arns["prod"]
+}
+
+output "deploy_role_arn_dev" {
+  description = "Set as the AWS_DEPLOY_ROLE_ARN_DEV repo variable. Assumed by deploy.yml's deploy-dev job."
+  value       = module.workload_roles.deploy_role_arns["dev"]
+}
+
+output "deploy_role_arn_prod" {
+  description = "Set as the AWS_DEPLOY_ROLE_ARN_PROD repo variable. Assumed by deploy.yml's deploy-prod job."
+  value       = module.workload_roles.deploy_role_arns["prod"]
+}

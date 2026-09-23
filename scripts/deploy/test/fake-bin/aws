@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+#
+# Fake `aws` CLI for scripts/deploy/test/run.sh. Understands only the exact
+# subcommands and flags scripts/deploy/*.sh actually issue - this harness
+# tests our own scripts' logic against a controlled, scriptable AWS, not AWS
+# itself (real AWS output shapes are cited in the scripts and confirmed
+# against docs.aws.amazon.com, not re-derived here).
+#
+# State is a flat-file "database" under $FAKE_AWS_STATE_DIR, one directory
+# per test case, shared with fake curl so a smoke test against a function
+# URL sees whatever the alias currently points at - the same coupling a real
+# deploy relies on.
+set -euo pipefail
+
+: "${FAKE_AWS_STATE_DIR:?FAKE_AWS_STATE_DIR must be set for the fake aws}"
+
+SERVICE="$1"
+OP="$2"
+shift 2
+
+declare -A OPT=()
+POSITIONAL=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --*)
+      OPT["${1#--}"]="${2:-}"
+      shift 2
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+fn_dir() { echo "$FAKE_AWS_STATE_DIR/functions/${OPT[function-name]}"; }
+digest_for() { echo "sha256:digest-$1"; }
+codesha_for() { echo "codesha-$1"; }
+
+case "$SERVICE $OP" in
+  "lambda update-function-code")
+    DIR="$(fn_dir)"
+    TAG="${OPT[image-uri]##*:}"
+    mkdir -p "$DIR"
+    printf '{"sha":"%s","digest":"%s","codesha256":"%s"}' \
+      "$TAG" "$(digest_for "$TAG")" "$(codesha_for "$TAG")" >"$DIR/latest.json"
+    printf '{"CodeSha256":"%s","LastUpdateStatus":"InProgress"}' "$(codesha_for "$TAG")"
+    ;;
+
+  "lambda wait")
+    # Only function-updated-v2 is ever called (positional arg, ignored below)
+    # - the fake's update-function-code above already applied synchronously,
+    # so there's nothing to poll.
+    exit 0
+    ;;
+
+  "lambda publish-version")
+    DIR="$(fn_dir)"
+    LATEST="$DIR/latest.json"
+    if [ ! -f "$LATEST" ]; then
+      echo "fake aws: publish-version before any update-function-code" >&2
+      exit 254
+    fi
+
+    if [ -n "${OPT[code-sha256]:-}" ]; then
+      CURRENT_CODESHA="$(jq -r '.codesha256' "$LATEST")"
+      if [ "${OPT[code-sha256]}" != "$CURRENT_CODESHA" ]; then
+        echo "PreconditionFailedException: CodeSha256 does not match \$LATEST" >&2
+        exit 254
+      fi
+    fi
+
+    mkdir -p "$DIR/versions"
+    TOP=0
+    for f in "$DIR"/versions/*.json; do
+      [ -e "$f" ] || continue
+      V="$(basename "$f" .json)"
+      if [ "$V" -gt "$TOP" ] 2>/dev/null; then
+        TOP="$V"
+      fi
+    done
+
+    # PublishVersion's own docs: "Lambda doesn't publish a version if the
+    # function's configuration and code haven't changed since the last
+    # version" - it returns the existing version instead of creating one.
+    if [ "$TOP" -gt 0 ] && diff -q "$DIR/versions/$TOP.json" "$LATEST" >/dev/null 2>&1; then
+      VERSION="$TOP"
+    else
+      NEXT_FILE="$DIR/next_version"
+      VERSION="$(cat "$NEXT_FILE" 2>/dev/null || echo 1)"
+      cp "$LATEST" "$DIR/versions/$VERSION.json"
+      echo "$((VERSION + 1))" >"$NEXT_FILE"
+    fi
+
+    CODESHA="$(jq -r '.codesha256' "$LATEST")"
+    printf '{"Version":"%s","CodeSha256":"%s"}' "$VERSION" "$CODESHA"
+    ;;
+
+  "lambda get-alias")
+    DIR="$(fn_dir)"
+    VERSION="$(cat "$DIR/alias_live" 2>/dev/null || echo '$LATEST')"
+    printf '{"FunctionVersion":"%s"}' "$VERSION"
+    ;;
+
+  "lambda update-alias")
+    DIR="$(fn_dir)"
+    echo "${OPT[function-version]}" >"$DIR/alias_live"
+    printf '{"FunctionVersion":"%s"}' "${OPT[function-version]}"
+    ;;
+
+  "lambda get-function")
+    DIR="$(fn_dir)"
+    REPO="$(cat "$DIR/repo" 2>/dev/null || echo unknown-repo)"
+    if [ -n "${OPT[qualifier]:-}" ]; then
+      QUALIFIER="${OPT[qualifier]}"
+    else
+      QUALIFIER='$LATEST'
+    fi
+
+    if [ "$QUALIFIER" = '$LATEST' ]; then
+      SRC="$DIR/latest.json"
+    elif [ "$QUALIFIER" = "live" ]; then
+      # "live" is an alias name, not a version - resolve it the way real
+      # Lambda does (GetFunction accepts an alias as --qualifier).
+      RESOLVED="$(cat "$DIR/alias_live" 2>/dev/null || echo '$LATEST')"
+      if [ "$RESOLVED" = '$LATEST' ]; then
+        SRC="$DIR/latest.json"
+      else
+        SRC="$DIR/versions/$RESOLVED.json"
+      fi
+    else
+      SRC="$DIR/versions/$QUALIFIER.json"
+    fi
+
+    if [ ! -f "$SRC" ]; then
+      echo "ResourceNotFoundException: ${OPT[function-name]}:${QUALIFIER}" >&2
+      exit 254
+    fi
+
+    SHA="$(jq -r '.sha' "$SRC")"
+    DIGEST="$(jq -r '.digest' "$SRC")"
+    printf '{"Code":{"ImageUri":"111111111111.dkr.ecr.us-east-1.amazonaws.com/%s:%s","ResolvedImageUri":"111111111111.dkr.ecr.us-east-1.amazonaws.com/%s@%s","RepositoryType":"ECR"},"Configuration":{"Version":"%s"}}' \
+      "$REPO" "$SHA" "$REPO" "$DIGEST" "$QUALIFIER"
+    ;;
+
+  "lambda get-function-url-config")
+    DIR="$(fn_dir)"
+    URL="$(cat "$DIR/url" 2>/dev/null || echo "")"
+    printf '{"FunctionUrl":"%s"}' "$URL"
+    ;;
+
+  "lambda list-versions-by-function")
+    DIR="$(fn_dir)"
+    ENTRIES=('{"Version":"$LATEST"}')
+    if [ -d "$DIR/versions" ]; then
+      for f in "$DIR"/versions/*.json; do
+        [ -e "$f" ] || continue
+        V="$(basename "$f" .json)"
+        ENTRIES+=("{\"Version\":\"$V\"}")
+      done
+    fi
+    JOINED="$(
+      IFS=,
+      echo "${ENTRIES[*]}"
+    )"
+    printf '{"Versions":[%s]}' "$JOINED"
+    ;;
+
+  "lambda delete-function")
+    DIR="$(fn_dir)"
+    rm -f "$DIR/versions/${OPT[qualifier]}.json"
+    printf '{}'
+    ;;
+
+  "lambda invoke")
+    OUTFILE="${POSITIONAL[-1]}"
+    SCENARIO="$(cat "$FAKE_AWS_STATE_DIR/scenario" 2>/dev/null || echo "")"
+    if printf '%s' "$SCENARIO" | grep -q "migrator-function-error"; then
+      # Correction 5, reproduced: HTTP 200 with FunctionError in the
+      # metadata, and the stack trace in the payload file, not the exit code.
+      printf '{"errorType":"Error","errorMessage":"division by zero","trace":["at up (/var/task/src/migrator.js:1:1)"]}' >"$OUTFILE"
+      printf '{"StatusCode":200,"FunctionError":"Unhandled","ExecutedVersion":"$LATEST"}'
+    else
+      printf '{"migrations":["001_init.sql"]}' >"$OUTFILE"
+      printf '{"StatusCode":200,"ExecutedVersion":"$LATEST"}'
+    fi
+    ;;
+
+  "ecr describe-images")
+    REPO="${OPT[repository-name]}"
+    IDS="${OPT[image-ids]}"
+    KEY="${IDS%%=*}"
+    VALUE="${IDS#*=}"
+    if [ "$KEY" = "imageDigest" ]; then
+      if [ -f "$FAKE_AWS_STATE_DIR/ecr/$REPO/digests/$VALUE" ]; then
+        printf '{"imageDetails":[{"imageDigest":"%s"}]}' "$VALUE"
+      else
+        echo "ImageNotFoundException: digest $VALUE not found in $REPO" >&2
+        exit 254
+      fi
+    else
+      DIGEST_FILE="$FAKE_AWS_STATE_DIR/ecr/$REPO/tags/$VALUE"
+      if [ -f "$DIGEST_FILE" ]; then
+        printf '{"imageDetails":[{"imageDigest":"%s"}]}' "$(cat "$DIGEST_FILE")"
+      else
+        echo "ImageNotFoundException: tag $VALUE not found in $REPO" >&2
+        exit 254
+      fi
+    fi
+    ;;
+
+  *)
+    echo "fake aws: unhandled command: $SERVICE $OP" >&2
+    exit 255
+    ;;
+esac

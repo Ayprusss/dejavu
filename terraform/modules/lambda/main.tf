@@ -93,8 +93,44 @@ resource "aws_lambda_function" "api" {
   }
 }
 
+# The pipeline (7.4) is what actually moves traffic: publish-version then
+# update-alias. Terraform only has to create the alias once and then leave it
+# alone (ignore_changes) - if Terraform "corrected" function_version back to
+# whatever this config says on every apply, it would undo every deploy.
+#
+# Verified (not assumed, per 7.2's task): CreateAlias's function_version
+# accepts the literal string "$LATEST" for a plain (non-weighted) alias - the
+# provider's schema validates it against `(\$LATEST|[0-9]+)`, and AWS's own
+# alias docs describe (while discouraging long-term use of) an alias pointed
+# at $LATEST. So the function does NOT need `publish = true` just to give this
+# alias something to reference on the first apply.
+#
+# That matters because `publish = true` on aws_lambda_function republishes a
+# version on *any* change the provider applies, not only a code change - the
+# argument's own description is "publish creation/change", and env-var/memory
+# edits go through UpdateFunctionConfiguration same as code does. With
+# image_uri already ignore_changes'd, the only edits Terraform still applies
+# here are config ones (CORS_ORIGINS, FRONTEND_URL, etc.), and correction 2
+# already covers keeping those live via a pipeline republish right after
+# apply (7.5). Adding `publish = true` on top would make Terraform itself
+# also publish an extra, never-smoke-tested version on that same apply -
+# exactly the "bypass the pipeline" case this step warns about - for no
+# benefit, since $LATEST already works. So: no `publish = true` here.
+resource "aws_lambda_alias" "api_live" {
+  name        = "live"
+  description = "Traffic pointer for the api function; moved only by scripts/deploy/deploy.sh (7.4), never by Terraform."
+
+  function_name    = aws_lambda_function.api.function_name
+  function_version = "$LATEST"
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
+}
+
 resource "aws_lambda_function_url" "api" {
   function_name = aws_lambda_function.api.function_name
+  qualifier     = aws_lambda_alias.api_live.name
 
   authorization_type = "NONE"
   invoke_mode        = "BUFFERED"
@@ -108,12 +144,38 @@ resource "aws_lambda_permission" "public_invoke" {
   statement_id           = "AllowPublicInvokeFunctionUrl"
   action                 = "lambda:InvokeFunctionUrl"
   function_name          = aws_lambda_function.api.function_name
+  qualifier              = aws_lambda_alias.api_live.name
   principal              = "*"
   function_url_auth_type = "NONE"
 }
 
+# 7.2 correction 1 / plan step 7.2: as of the AWS change that took effect
+# October 2025 (all function URLs must comply by November 2026), a NONE-auth
+# function URL needs a *second* resource-policy statement granting
+# lambda:InvokeFunction, gated by the InvokedViaFunctionUrl condition key -
+# lambda:InvokeFunctionUrl alone no longer authorizes the actual invoke.
+# Confirmed against the AWS Lambda "Control access to function URLs" doc
+# (docs.aws.amazon.com/lambda/latest/dg/urls-auth.html) and the CLI's own
+# two-command example, which issues these as separate add-permission calls
+# rather than one. Without this, a correctly created URL still 403s - not
+# something 6.x's alias-less URL ever needed. `invoked_via_function_url`
+# landed in hashicorp/aws 6.28.0; the lockfile here already resolves newer.
+resource "aws_lambda_permission" "public_invoke_function" {
+  statement_id             = "AllowPublicInvokeFunction"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.api.function_name
+  qualifier                = aws_lambda_alias.api_live.name
+  principal                = "*"
+  invoked_via_function_url = true
+}
+
 # ---------------------------------------------------------------------------
 # Migrator function - no Function URL, invoked directly (`aws lambda invoke`)
+#
+# 7.2: no alias here, on purpose. It never takes public traffic - the
+# pipeline (7.4) invokes it at $LATEST right after its own
+# update-function-code, before the api's alias moves - so there is nothing
+# to roll back to and nothing an alias would protect.
 # ---------------------------------------------------------------------------
 
 resource "aws_lambda_function" "migrator" {

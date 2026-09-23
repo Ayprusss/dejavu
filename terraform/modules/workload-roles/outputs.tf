@@ -19,3 +19,8 @@ output "workload_role_names" {
   description = "Keyed by environment name (dev, prod)."
   value       = { for k, r in aws_iam_role.workload : k => r.name }
 }
+
+output "deploy_role_arns" {
+  description = "Keyed by environment name (dev, prod). Set as AWS_DEPLOY_ROLE_ARN_DEV / _PROD."
+  value       = { for k, r in aws_iam_role.deploy : k => r.arn }
+}

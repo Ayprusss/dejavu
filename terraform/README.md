@@ -91,6 +91,16 @@ terraform init -backend-config=backend.hcl
 TF_VAR_budget_notification_email=you@example.com terraform plan
 ```
 
+**7.3 added four new bootstrap outputs**, also set as GitHub repository
+variables once bootstrap is applied: `deploy_role_arn_dev` /
+`deploy_role_arn_prod` → `AWS_DEPLOY_ROLE_ARN_DEV` / `AWS_DEPLOY_ROLE_ARN_PROD`
+(assumed by `deploy.yml`, not `terraform.yml`), and `workload_role_arn_prod` →
+`AWS_WORKLOAD_ROLE_ARN_PROD` (consumed by `envs/prod`'s `modules/lambda`, the
+same way dev's already was). The deploy roles are separate from the
+plan/apply roles above them in this file — see
+`modules/workload-roles/main.tf`'s "Deploy roles" section and phase-7-steps.md
+7.3/D8 for why.
+
 ## Setting a secret's real value
 
 ```bash
@@ -282,6 +292,7 @@ once on 2026-09-16/17; the numbers below are real.
 ```bash
 cd terraform/envs/dev
 export TF_VAR_budget_notification_email=...   # same value CI uses
+export TF_VAR_alarm_email=...                 # ALARM_EMAIL; required while enable_alarms is true
 terraform destroy \
   -target=module.lambda -target=module.rds \
   -target=module.network -target=module.observability
@@ -297,6 +308,21 @@ terraform destroy \
   `lambda` security group (**20 min**) wait for Lambda's Hyperplane ENIs to
   be released. Don't cancel it.
 - Log groups go with it, so earlier Lambda logs are gone.
+- **Snapshots (issue #26).** Dev sets `skip_final_snapshot = true` and
+  automated backups go with the instance, so dev leaves nothing. Prod leaves
+  a manual snapshot, `dejavu-prod-final-<creation time>`, that Terraform
+  won't track or delete and that bills at $0.095/GB-month (up to ~$1.90/month
+  for 20 GB; no free allowance once the instance is gone). The decision is to
+  delete it once the teardown is verified: it holds seed data and test-mode
+  orders, and a re-apply never restores from it. Confirm both lists are
+  empty; the ~$0.20 floor assumes they are:
+  ```bash
+  aws rds describe-db-snapshots --snapshot-type manual \
+    --query 'DBSnapshots[].[DBSnapshotIdentifier,SnapshotCreateTime]'
+  aws rds delete-db-snapshot --db-snapshot-identifier dejavu-prod-final-<…>
+  aws rds describe-db-instance-automated-backups \
+    --query 'DBInstanceAutomatedBackups[].[DBInstanceIdentifier,Status]'
+  ```
 
 ### Re-apply (~13 min to a verified webhook)
 
@@ -339,6 +365,24 @@ have to follow it:
 
 A stable hostname in front of the function (CloudFront or a custom domain)
 would make both of those unnecessary.
+
+**The alarm subscription is new on every re-create too** (7.7, issue #24).
+The SNS topic and its email subscription live in `module.observability`, so
+the targeted destroy takes them and the apply brings back a new topic with a
+`PendingConfirmation` subscription. Until someone clicks the link AWS emails
+to `ALARM_EMAIL`, every alarm routes nowhere, silently. After every re-apply:
+
+3. **SNS:** click the confirmation link, then check it rather than assume it:
+   ```bash
+   aws sns list-subscriptions-by-topic \
+     --topic-arn "$(terraform output -raw alarm_topic_arn)" \
+     --query 'Subscriptions[].SubscriptionArn'
+   ```
+   It must print a real `arn:aws:sns:…` ARN, not `PendingConfirmation`. If
+   the email never arrived or the link has expired, a plain re-apply won't
+   send another; request one from the SNS console (the subscription's
+   "Request confirmation") or
+   `terraform apply -replace='module.observability.aws_sns_topic_subscription.alarms_email[0]'`.
 
 ### Stopping instead of destroying (documented, not drilled)
 
