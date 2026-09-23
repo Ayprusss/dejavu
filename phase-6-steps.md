@@ -32,7 +32,7 @@ restored from PITR once and the steps are written down.
 | 6.9 | Runtime checks: proxy, cold start, bcryptjs, CORS | | [x] |
 | 6.10 | Secret rotation actually exercised | | [x] |
 | 6.11 | PITR restore drill, written down | | [x] |
-| 6.12 | Destroy → re-apply drill, cost check | | [x] (48h cost recheck owed) |
+| 6.12 | Destroy → re-apply drill, cost check | | [x] |
 | 6.13 | Docs, execution plan, merge | | [~] docs done; merge pending |
 
 ---
@@ -1169,15 +1169,22 @@ the agent read the logs back and verified.
       the NAT is stopped, **every Lambda cold start fails**, because the SSM
       fetch has no route out (no VPC endpoints, 6.6). Stopping the NAT and not
       RDS saves little and breaks the API.
-- [ ] Check Cost Explorer after ~48h against the table below, and correct the
-      table with real numbers. — **Partly done; the 48h check is still
-      owed.** What's already known: this account is on the AWS **Free plan**
-      (`freetier get-account-plan-state`: `FREE`, `ACTIVE`, $159.59 credits
-      remaining). Month-to-date usage was **$0.41**, fully offset by credits,
-      and the RDS, NAT and public IPv4 hours all bill at $0 under the free
-      tier. The table below is corrected to list prices and the NAT's real
-      `t4g.micro` size (6.7); re-check once a full two days are in Cost
-      Explorer.
+- [x] Check Cost Explorer after ~48h against the table below, and correct the
+      table with real numbers. — First look (at the drill): this account is
+      on the AWS **Free plan** (`freetier get-account-plan-state`: `FREE`,
+      `ACTIVE`, $159.59 credits remaining). Month-to-date usage was
+      **$0.41**, fully offset by credits, and the RDS, NAT and public IPv4
+      hours all bill at $0 under the free tier. The table below is corrected
+      to list prices and the NAT's real `t4g.micro` size (6.7).
+      **Re-checked 2026-09-23** (issue #23), a six-day sample rather than
+      48 h: dev has run continuously since this re-create (RDS
+      `InstanceCreateTime` 2026-09-17T00:22Z). `aws ce get-cost-and-usage`
+      for 2026-09-01 to 2026-09-23, monthly, grouped by service: every
+      service line $0 (or a ~1e-8 rounding artifact), total ≈ −$0.00000012.
+      RDS, EC2 (NAT) and public-IPv4 hours are all $0 under the free tier
+      with one environment up. `freetier get-account-plan-state`:
+      **$174.32** credits remaining, higher than the $159.59 above, and the
+      plan expires **2027-03-10T22:53:06Z**.
 
 ---
 
@@ -1260,12 +1267,16 @@ accounts created after July 2025.
 | Lambda + CloudWatch Logs at this traffic | ~$0–1 |
 | **Total at list price** | **~$25–26** (~$0.85/day) |
 
-**What this account actually pays (6.12):** it is on the AWS Free plan, and
-Cost Explorer bills the RDS instance hours, the NAT instance hours and the
-public IPv4 at **$0** under the free tier. Month-to-date usage was $0.41,
-fully offset by credits ($159.59 remaining). The list-price table is what a
-paid account, or this one after the free plan ends, would see. The 48 h
-Cost Explorer re-check is still owed.
+**What this account actually pays (6.12, re-checked 2026-09-23):** it is on
+the AWS Free plan, and Cost Explorer bills the RDS instance hours, the NAT
+instance hours and the public IPv4 at **$0** under the free tier. From
+2026-09-01 to 2026-09-23 every service line is $0 (total ≈ −$0.00000012),
+over six days of dev running continuously since the 6.12 re-create.
+Credits remaining: **$174.32**; the plan expires **2027-03-10T22:53:06Z**.
+The list-price table is what a paid account, or this one after the free
+plan ends, would see. That's one environment; with prod up as well, the
+second set of instance hours exceeds the free tier and draws credits (see
+`phase-7-steps.md`'s Cost section).
 
 With both RDS and the NAT stopped, storage and snapshots only: ~$3/month
 (RDS restarts itself after 7 days). Fully destroyed (bootstrap + ECR + SSM
