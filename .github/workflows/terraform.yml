@@ -33,6 +33,15 @@ env:
   TF_VERSION: '1.11.4'
   TF_IN_AUTOMATION: 'true'
 
+# Every setup-terraform step below sets `terraform_wrapper: false`, and must
+# keep it. The wrapper (on by default) replaces `terraform` with a Node script
+# that treats exit 2 as success and exits 0, so `$?` after
+# `plan -detailed-exitcode` is never 2. It also writes its own `exitcode`
+# step output, which the plan steps' `exitcode=$code` then overwrote with 0.
+# That is why run 35820019759 planned 15/2/2 and skipped apply while staying
+# green. Nothing here reads the wrapper's stdout/stderr/exitcode outputs:
+# the PR plan redirects to plan.txt, and the apply plans check `$?`.
+
 jobs:
   # --------------------------------------------------------------------------
   # Formatting and validation. No credentials, so this also runs for forks.
@@ -42,9 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - name: terraform fmt
         run: terraform fmt -check -recursive terraform/
@@ -78,9 +88,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       # No access keys. This exchanges the job OIDC token for credentials that
       # expire in an hour.
@@ -188,9 +199,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -222,10 +234,24 @@ jobs:
           terraform plan -input=false -detailed-exitcode -out=tfplan
           code=$?
           set -e
-          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
-          if [ "$code" -eq 1 ]; then
+          # The apply steps are gated on exitcode == '2'. If that value is
+          # wrong, apply is skipped and the job still goes green. So refuse
+          # anything but 0/2, then check the code against the saved plan.
+          # `applyable` is the flag -detailed-exitcode turns into 2. If they
+          # disagree, something rewrote the exit code (the setup-terraform
+          # wrapper did in run 35820019759). Only `.applyable` is printed,
+          # since the JSON contains sensitive values in plain text.
+          case "$code" in
+            0|2) ;;
+            *) echo "::error::terraform plan exited $code"; exit 1 ;;
+          esac
+          applyable=$(terraform show -json tfplan | jq -r '.applyable')
+          if [ "$code" -eq 2 ]; then want=true; else want=false; fi
+          if [ "$applyable" != "$want" ]; then
+            echo "::error::plan exit code $code but tfplan applyable=$applyable - refusing to guess whether to apply"
             exit 1
           fi
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
 
       - name: terraform apply
         if: steps.plan.outputs.exitcode == '2'
@@ -301,9 +327,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
           terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -330,10 +357,24 @@ jobs:
           terraform plan -input=false -detailed-exitcode -out=tfplan
           code=$?
           set -e
-          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
-          if [ "$code" -eq 1 ]; then
+          # The apply steps are gated on exitcode == '2'. If that value is
+          # wrong, apply is skipped and the job still goes green. So refuse
+          # anything but 0/2, then check the code against the saved plan.
+          # `applyable` is the flag -detailed-exitcode turns into 2. If they
+          # disagree, something rewrote the exit code (the setup-terraform
+          # wrapper did in run 35820019759). Only `.applyable` is printed,
+          # since the JSON contains sensitive values in plain text.
+          case "$code" in
+            0|2) ;;
+            *) echo "::error::terraform plan exited $code"; exit 1 ;;
+          esac
+          applyable=$(terraform show -json tfplan | jq -r '.applyable')
+          if [ "$code" -eq 2 ]; then want=true; else want=false; fi
+          if [ "$applyable" != "$want" ]; then
+            echo "::error::plan exit code $code but tfplan applyable=$applyable - refusing to guess whether to apply"
             exit 1
           fi
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
 
       - name: terraform apply
         if: steps.plan.outputs.exitcode == '2'
