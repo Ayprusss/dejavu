@@ -4,12 +4,20 @@
 order* for everything the agents couldn't do. Every step here touches a live
 system (AWS, GitHub, Stripe or Vercel), so each one is run by you.
 
-**Where things stand (2026-09-17):** all code-only work for 7.0, 7.2–7.7 and
-7.9 is merged on the local branch `phase-7-cd`, which isn't pushed yet. On the
-combined branch: backend lint and format check clean, 93 unit tests, 53
+**Where things stand (2026-09-23):** all code-only work for 7.0, 7.2–7.7 and
+7.9 is on `main`: `phase-7-cd` was pushed and merged via PR #28 (`61b9ee6`).
+CI on the merge: backend lint and format check clean, 93 unit tests, 53
 integration tests, frontend lint clean, 55 tests and a green build, Terraform
-fmt/validate on bootstrap, dev and prod, actionlint, shellcheck, and 21/21
-cases in the deploy-script harness. None of it has run against AWS yet.
+fmt/validate on bootstrap, dev and prod, actionlint, shellcheck, and 30/30
+cases in the deploy-script harness.
+
+The merge came before the live stages, not after them. Stage 1b's ruleset
+(`main: require ci via PR`) is active; stages 1, 2 and 4–6 have not run
+(`ALARM_EMAIL` and `AWS_DEPLOY_ROLE_ARN_DEV` are both unset). What the push to
+`main` did touch: the api and migrator images for `61b9ee6` went to ECR;
+Terraform `apply-dev` planned 15 to add, 2 to change, 2 to destroy, but its
+`terraform apply` step was skipped, so dev is unchanged; `deploy.yml`'s
+`deploy-dev` failed at credentials (no deploy role until stage 2).
 
 Tracking issues: #7 (7.0), #9 (7.2), #10 (7.3), #11 (7.4), #12 (7.5),
 #13 (7.6), #14 (7.7), #15 (7.8), #16 (7.9), #17 (7.10), #18 (7.11),
@@ -771,8 +779,8 @@ The full script is `phase-7-steps.md` 7.10. The shape:
 
 ## Housekeeping
 
-- The agent worktrees under `.claude/worktrees/` are untracked, and all their
-  branches are merged. Remove them when convenient:
+- `.claude/worktrees/` is in `.gitignore` (issue #27), so `git add -A` can't
+  pick the agent worktrees up. Once no agent is running in one, remove them:
   `git worktree list`, then `git worktree remove <path>` and
   `git branch -d worktree-agent-…`.
 - **After every stage,** tick the matching boxes in `phase-7-steps.md`, add
