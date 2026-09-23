@@ -28,7 +28,9 @@ describe('cartAttemptSignature', () => {
 
   it('differs when a quantity changes', () => {
     expect(cartAttemptSignature(items())).not.toBe(
-      cartAttemptSignature(items().map((i) => (i.variantId === 'v1' ? { ...i, quantity: 2 } : i))),
+      cartAttemptSignature(
+        items().map((i) => (i.variantId === 'v1' ? { ...i, quantity: 2 } : i)),
+      ),
     );
   });
 });
@@ -65,7 +67,9 @@ describe('getCheckoutAttempt', () => {
   it('issues a new key once the cart contents change', () => {
     const generateKey = sequentialKeyGenerator();
     const first = getCheckoutAttempt(null, items(), generateKey);
-    const changedCart = items().map((i) => (i.variantId === 'v1' ? { ...i, quantity: 5 } : i));
+    const changedCart = items().map((i) =>
+      i.variantId === 'v1' ? { ...i, quantity: 5 } : i,
+    );
     const second = getCheckoutAttempt(first, changedCart, generateKey);
 
     expect(second.key).not.toBe(first.key);

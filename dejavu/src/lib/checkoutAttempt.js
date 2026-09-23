@@ -29,7 +29,11 @@ export function cartAttemptSignature(items) {
  * signature matches, this is a retry of the same attempt, so the same key is
  * reused; otherwise a new attempt — and a new key — starts.
  */
-export function getCheckoutAttempt(prevAttempt, items, generateKey = () => crypto.randomUUID()) {
+export function getCheckoutAttempt(
+  prevAttempt,
+  items,
+  generateKey = () => crypto.randomUUID(),
+) {
   const signature = cartAttemptSignature(items);
 
   if (prevAttempt && prevAttempt.signature === signature) {
