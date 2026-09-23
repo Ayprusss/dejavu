@@ -656,6 +656,30 @@ schema**. Rolling back the code doesn't roll back the schema.
       `TF_VAR_budget_notification_email` line in `terraform.yml` (plan,
       apply-dev, apply-prod). **Not verified live** — confirming the
       subscription and its ARN needs a real apply and a clicked email link.
+    - [x] **It recurs (issue #24).** The topic and subscription are in each
+      environment's state, so every targeted destroy/re-create (D5, 7.12's
+      resting state) yields a new `PendingConfirmation` subscription.
+      **Decision: accept it (option 1)** rather than move the topic into
+      `bootstrap/` (option 2). Reasoning: (a) a re-create already has
+      mandatory human steps outside Terraform — the Stripe endpoint URL and
+      Vercel's `VITE_API_URL` — so one more click in the same sitting costs
+      almost nothing, whereas option 2 is a cross-config reference that
+      Phase 5/6 avoided; (b) `bootstrap/` is applied by hand with admin
+      credentials, so the alarm address (today a CI secret, `ALARM_EMAIL`)
+      would become something only an admin apply can change, and
+      `enable_alarms` would no longer switch off the whole set in one place;
+      (c) the failure is made checkable instead of assumed. Recorded as item
+      3 of the re-create list in `terraform/README.md` ("Tearing dev down and
+      bringing it back") and in `phase-7-runbook.md` stages 6 and 9. The
+      check: `aws sns list-subscriptions-by-topic --topic-arn "$(terraform
+      output -raw alarm_topic_arn)" --query 'Subscriptions[].SubscriptionArn'`
+      must not return `PendingConfirmation` (`alarm_topic_arn` added to
+      `envs/dev/outputs.tf`; add the same output to `envs/prod` when prod
+      gets `module.observability`). **Not wired into `scripts/deploy/`:**
+      `smoke.sh` only talks to the public URL and `promote-check.sh` only to
+      ECR/Lambda, so it would mean new `sns:ListSubscriptionsByTopic` grants
+      on the deploy roles (a bootstrap change) for a warning in a CI log that
+      nobody reads on a green run. Revisit if the resting state changes.
 - [x] **Alarm 1 · 5xx on the live alias.** `AWS/Lambda` `Url5xxCount`,
       `Sum ≥ 1` over 1 × 60 s, `treat_missing_data = notBreaching`.
       **Verify the dimension names from `aws cloudwatch list-metrics` after

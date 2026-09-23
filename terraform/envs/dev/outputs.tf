@@ -46,3 +46,10 @@ output "api_alias_name" {
 output "api_alias_arn" {
   value = module.lambda.api_alias_arn
 }
+
+# Issue #24: every re-create makes a new topic and a new, unconfirmed email
+# subscription. This is the ARN to check it against (terraform/README.md,
+# "Tearing dev down and bringing it back"). Null when enable_alarms is false.
+output "alarm_topic_arn" {
+  value = module.observability.sns_topic_arn
+}

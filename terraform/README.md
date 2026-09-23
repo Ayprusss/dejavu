@@ -292,6 +292,7 @@ once on 2026-09-16/17; the numbers below are real.
 ```bash
 cd terraform/envs/dev
 export TF_VAR_budget_notification_email=...   # same value CI uses
+export TF_VAR_alarm_email=...                 # ALARM_EMAIL; required while enable_alarms is true
 terraform destroy \
   -target=module.lambda -target=module.rds \
   -target=module.network -target=module.observability
@@ -349,6 +350,24 @@ have to follow it:
 
 A stable hostname in front of the function (CloudFront or a custom domain)
 would make both of those unnecessary.
+
+**The alarm subscription is new on every re-create too** (7.7, issue #24).
+The SNS topic and its email subscription live in `module.observability`, so
+the targeted destroy takes them and the apply brings back a new topic with a
+`PendingConfirmation` subscription. Until someone clicks the link AWS emails
+to `ALARM_EMAIL`, every alarm routes nowhere, silently. After every re-apply:
+
+3. **SNS:** click the confirmation link, then check it rather than assume it:
+   ```bash
+   aws sns list-subscriptions-by-topic \
+     --topic-arn "$(terraform output -raw alarm_topic_arn)" \
+     --query 'Subscriptions[].SubscriptionArn'
+   ```
+   It must print a real `arn:aws:sns:…` ARN, not `PendingConfirmation`. If
+   the email never arrived or the link has expired, a plain re-apply won't
+   send another; request one from the SNS console (the subscription's
+   "Request confirmation") or
+   `terraform apply -replace='module.observability.aws_sns_topic_subscription.alarms_email[0]'`.
 
 ### Stopping instead of destroying (documented, not drilled)
 
