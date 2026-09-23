@@ -5,6 +5,10 @@ supabase/.temp/
 # Personal study notes, not project documentation.
 /docs/
 
+# Claude Code agent worktrees, one full checkout each. Only this directory:
+# .claude/settings.json is tracked on purpose.
+.claude/worktrees/
+
 # --- Terraform ---
 # .terraform/ holds downloaded providers and the resolved backend config.
 **/.terraform/*
