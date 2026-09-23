@@ -254,13 +254,22 @@ Click the confirmation link AWS emailed to `ALARM_EMAIL`, then check that the
 subscription has a real ARN:
 
 ```bash
+# from terraform/envs/dev; the ARN is arn:aws:sns:us-east-1:059317926288:dejavu-dev-alarms
 aws sns list-subscriptions-by-topic \
-  --topic-arn arn:aws:sns:us-east-1:059317926288:dejavu-dev-alarms \
+  --topic-arn "$(terraform output -raw alarm_topic_arn)" \
   --query 'Subscriptions[].SubscriptionArn'
 ```
 
 It should not say `PendingConfirmation`. **Until it does, every alarm emails
 nobody.**
+
+**This recurs.** The topic and subscription live in the environment's own
+state, so every teardown and re-create (D5, stage 11) makes a new, unconfirmed
+subscription. Treat it as a required post-apply step beside the Stripe
+endpoint and Vercel `VITE_API_URL` updates — it is item 3 of the re-create
+list in `terraform/README.md` ("Tearing dev down and bringing it back").
+Option 2 in issue #24 (move it into `bootstrap/`) was weighed and declined;
+see 7.7.
 
 ### Metric dimensions really exist (7.7)
 
@@ -472,7 +481,12 @@ and write the choice in 7.9. Set that project's production `VITE_API_URL` to
 **Click-through on prod:** browse → cart → `4242…` → success page → claim the
 order → order visible in admin.
 
-**SNS:** confirm prod's alarm subscription email, the same way as in stage 6.
+**SNS:** confirm prod's alarm subscription email and run the stage 6 check
+against `arn:aws:sns:us-east-1:059317926288:dejavu-prod-alarms` (or
+`terraform output -raw alarm_topic_arn` from `envs/prod`, if prod exposes
+it). It must not say `PendingConfirmation`. Like dev's, this is **required
+after every prod apply that re-creates the topic**, not once — including the
+first apply after a stage 11 teardown.
 
 ---
 
