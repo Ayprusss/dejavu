@@ -62,5 +62,22 @@ resource "aws_db_instance" "this" {
   skip_final_snapshot = var.skip_final_snapshot
   apply_immediately   = var.apply_immediately
 
+  # Required whenever skip_final_snapshot = false, or the destroy errors out.
+  # A fixed name would collide on the second teardown (DBSnapshotAlreadyExists)
+  # if the previous snapshot were still there, so it carries the instance's
+  # creation time: one create, one destroy, one unique name. ignore_changes
+  # stops timestamp() from producing a diff on every plan. The snapshot this
+  # leaves behind is a manual snapshot: Terraform won't delete it and it bills
+  # until someone does (issue #26, terraform/README.md "Destroy").
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${local.name}-final-${formatdate("YYYYMMDDhhmmss", timestamp())}"
+
+  # The default, stated: automated backups go with the instance. Only the
+  # final snapshot above survives a destroy.
+  delete_automated_backups = true
+
   tags = { Name = local.name }
+
+  lifecycle {
+    ignore_changes = [final_snapshot_identifier]
+  }
 }

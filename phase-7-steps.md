@@ -766,6 +766,12 @@ schema**. Rolling back the code doesn't roll back the schema.
     - `deletion_protection = true` changes D5's destroy loop: tearing prod
       down needs a `ModifyDBInstance` to turn protection off first, and that's
       deliberate. Put it in the runbook (7.11).
+    - The final snapshot outlives the destroy (issue #26). It's a manual
+      snapshot: not in state afterwards, not removed by anything, billed at
+      $0.095/GB-month with no free allowance once the instance is gone.
+      `modules/rds` names it `dejavu-prod-final-<creation time>`, so a second
+      teardown can't collide with a leftover. Resting-state decision: delete
+      it once the teardown is verified (7.12).
 - [ ] `module.lambda`: `cors_origins`/`frontend_url` = prod's frontend (7.9),
       alias from 7.2, `initial_image_tag` = **the SHA currently live in dev**,
       never `bootstrap` (correction 7).
@@ -979,6 +985,18 @@ Each one is either done or listed under a **"Known limitations"** heading in
       the ~$0.20 floor). Run the targeted destroys, turning off
       `deletion_protection` first for prod, and confirm in the console that no
       VPC, ENI, RDS instance, NAT or public IP is left.
+- [ ] Confirm no RDS snapshots are left, manual **and** automated (issue #26).
+      Prod's destroy leaves `dejavu-prod-final-…` by design; delete it (the
+      decision: prod's data is seed plus test-mode orders, and a re-apply
+      builds an empty instance and never restores from it). Both lists must
+      come back empty:
+      ```bash
+      aws rds describe-db-snapshots --snapshot-type manual \
+        --query 'DBSnapshots[].[DBSnapshotIdentifier,SnapshotCreateTime]'
+      aws rds delete-db-snapshot --db-snapshot-identifier dejavu-prod-final-<…>
+      aws rds describe-db-instance-automated-backups \
+        --query 'DBInstanceAutomatedBackups[].[DBInstanceIdentifier,Status]'
+      ```
 - [ ] Confirm the Stripe webhook endpoints: either leave them in place
       (harmless; they'll fail delivery while the URL is gone, and each needs a
       URL update after the next apply anyway) or disable them. Write down which.
@@ -1031,7 +1049,12 @@ extra a month that's months of runway, not days. But it's no longer the "$0
 actually paid" story, and the budgets (7.8) should reflect it.
 
 **D5's resting state:** both environments destroyed, with bootstrap, ECR and
-SSM kept: ~$0.20/month. Bringing one environment back takes ~13 min plus a
+SSM kept, **and prod's final snapshot deleted**: ~$0.20/month. Keeping that
+snapshot instead adds up to **~$1.90/month** (20 GB × $0.095/GB-month,
+us-east-1 `RDS:ChargedBackupUsage` for PostgreSQL, read from the AWS Price
+List API, publication 2026-09-22). That is an upper bound: it bills on the
+snapshot's stored size, which wasn't measured. With no instance left there is
+no free backup allowance, so every GB counts. Bringing one environment back takes ~13 min plus a
 pipeline deploy, and prod's teardown adds one `deletion_protection` toggle.
 
 ---

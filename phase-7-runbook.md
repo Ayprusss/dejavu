@@ -383,7 +383,7 @@ that bite:
 - `envs/prod/main.tf` gets dev's module wiring with prod's values:
   - VPC `10.30.0.0/16`
   - RDS: `deletion_protection = true`, `skip_final_snapshot = false`
-    plus a snapshot name, `apply_immediately = false`,
+    (the module now derives the snapshot name), `apply_immediately = false`,
     `backup_retention_period = 1`
   - `initial_image_tag` = the SHA dev is running, never `bootstrap`
   - `alarm_email` variable, as in dev
@@ -540,6 +540,20 @@ The full script is `phase-7-steps.md` 7.10. The shape:
   Allow ~20 min per environment for the ENI release. Afterwards, confirm in
   the console that no VPC, ENI, RDS instance, NAT or public IP is left, then
   run a last Cost Explorer check a few days later.
+- **Prod's final snapshot: deleted, not kept.** The destroy leaves a manual
+  snapshot `dejavu-prod-final-<creation time>` that bills at $0.095/GB-month
+  (up to ~$1.90/month for 20 GB, with no free allowance once the instance is
+  gone) until someone removes it. It holds seed data and test-mode orders,
+  and a re-apply never restores from it, so it goes once the teardown is
+  verified (issue #26). The floor is ~$0.20 only after this:
+  ```bash
+  aws rds describe-db-snapshots --snapshot-type manual \
+    --query 'DBSnapshots[].[DBSnapshotIdentifier,SnapshotCreateTime]'
+  aws rds delete-db-snapshot --db-snapshot-identifier dejavu-prod-final-<…>
+  aws rds describe-db-instance-automated-backups \
+    --query 'DBInstanceAutomatedBackups[].[DBInstanceIdentifier,Status]'
+  ```
+  Both lists should come back empty.
 - **Tag it:** `git tag -a v1.0.0 -m "Dejavu 1.0" && git push origin v1.0.0`.
 
 ---
