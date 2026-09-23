@@ -516,6 +516,30 @@ The plan says under ~10 s, and exactly three checks.
       `phase-7-runbook.md` stages 6 and 10 check `NextRotationDate`. A
       rollback inside a rotation window is suspect until the log is checked
       for `28P01`.
+- [x] **Then the backend retry-once was promoted too** (issue #22, second
+      pass; see 7.12). The reason to do it anyway, although smoke already
+      coped: the stale-cache case is the *common* one (6.10 run 2), and
+      retrying there is always safe. A `28P01` is raised in the auth
+      handshake of a new physical connection, before any statement is sent.
+      So `pool.js` now retries **the connection, not the call**: it wraps
+      `pool.connect` only, in both styles, and calls `invalidate()` before
+      the second attempt so it re-fetches the password. pg-pool's
+      `pool.query` acquires through `this.connect(cb)`, so it gets the same
+      retry. It retries exactly once, only on `28P01`, and never around a
+      `pool.query`/`client.query`, where an error can arrive after the
+      statement ran. Each retry logs `db.auth_retry`. Result: a stale-cache
+      blip is one slower request (≈277 ms in 6.10, for the Secrets Manager
+      re-fetch plus TLS), not a 500. It doesn't cost a smoke attempt, and it
+      puts no stray 5xx into `Url5xxCount` or the 5xx alarm. What stays the
+      same: smoke's retries are the backstop, and the mid-rotation window
+      above is still covered only by timing. A second `28P01` there goes to
+      the caller as before.
+      Unit-tested without a database (`backend/tests/dbPool.test.js`: 8
+      cases, stubbing only pg-pool's `connect` and driving the real
+      `pool.query`). Verified by breaking it: against `main`'s `pool.js`,
+      4 of the 8 go red (every retry case). An unbounded retry reddens "exactly
+      once". A query-level retry layered on top reddens "exactly once" and
+      "never re-issues a statement".
 
 ### `promote-check.sh <sha>`
 
@@ -1055,14 +1079,17 @@ Each one is either done or listed under a **"Known limitations"** heading in
 - [ ] Playwright E2E (Phase 4)
 - [ ] `idempotencyKey` from the frontend (Phase 3 / 7.0)
 - [ ] Least-privilege `dejavu_app` DB role (D8, Phase 6)
-- [ ] Retry once on `28P01` (6.10). **Still deferred, now on purpose**
-      (issue #22). The deploy-safety concern is covered: `smoke.sh`'s
-      retries absorb one blip, and the harness proves it (7.4). What's left
-      is a user-facing improvement, namely one invisible failed request per
-      warm environment per week. It isn't a correctness fix, and it doesn't
-      cover the mid-rotation window either (7.4). For "Known limitations",
-      one line: "a weekly secret rotation can cost one failed request per
-      warm Lambda environment."
+- [x] Retry once on `28P01` (6.10). **Done** (issue #22, second pass; 7.4).
+      It was first deferred because `smoke.sh`'s retries already absorb one
+      blip. It was then promoted because retrying the *connection* is always
+      safe (28P01 comes before any statement) and the change is small.
+      `pool.js` wraps `pool.connect` only, which `pool.query` goes through,
+      and `backend/tests/dbPool.test.js` covers it. The
+      stale-cache blip is now one slower request instead of a failed one.
+      What remains for "Known limitations", in one line: "a request that
+      lands while a secret rotation is still in progress (RDS has the new
+      password, the secret doesn't yet) can still fail; the retry re-fetches
+      the same old password."
 - [ ] Shared rate-limit store or WAF (6.9)
 - [ ] User-enumeration timing on login (6.9: 401 before bcrypt when the email
       doesn't exist)

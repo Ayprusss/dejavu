@@ -1206,7 +1206,8 @@ the agent read the logs back and verified.
       IAM DB auth instead of a password; VPC endpoints vs NAT at higher
       traffic; RDS Proxy if concurrency × pool ever approaches
       `max_connections`; a shared rate-limit store; retry once on `28P01`
-      after `invalidate()` so a rotation is invisible to callers (6.10).
+      after `invalidate()` so a rotation is invisible to callers (6.10;
+      done in Phase 7, issue #22, as a retry of the connection only).
       Also added: a stable hostname in front of the Function URL (6.12),
       IAM Identity Center (6.0), and split SSM state at more environments.
 - [ ] Merge. `apply-dev` runs on the merge and should be a no-op plan, because
