@@ -930,6 +930,16 @@ What "done" means for Dejavu as a whole, not just Phase 7.
       secret-scanning alerts.
 - [ ] Phase 1: branch protection still requires `ci`. Confirm on a real PR
       with a failing test, one last time.
+      **The gate had lapsed.** Found 2026-09-23 (issue #20): `main` had no
+      branch protection and no ruleset, so red CI didn't block a merge and
+      direct pushes were allowed. Most likely it was lost in Phase 0's
+      `git filter-repo` + force-push, and nothing re-enabled it, so the
+      Phase 1 claim had been false since then. Re-enabled on
+      **YYYY-MM-DD** as a repository ruleset
+      (`scripts/github/main-ruleset.json`: `ci` required, PR required with 0
+      approvals because it's a solo repo, no force-push or deletion, no
+      bypass), and verified with a failing-test canary PR. See
+      `phase-7-runbook.md` stage 1b.
 - [ ] Phases 2–4: `docker compose up` → migrate → seed → storefront works
       locally; `npm run test:all` green; unit and integration counts recorded.
 - [ ] Phase 5: `terraform plan` comments on a PR; fork still can't assume a

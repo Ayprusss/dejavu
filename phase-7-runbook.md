@@ -23,6 +23,7 @@ Tracking issues: #7 (7.0), #9 (7.2), #10 (7.3), #11 (7.4), #12 (7.5),
 |---|---|---|
 | 0 | Phase 6 leftovers (7.0) | Cost numbers feed the prod decision |
 | 1 | GitHub secret `ALARM_EMAIL` | Every Terraform plan fails without it |
+| 1b | Ruleset on `main` requiring `ci` (issue #20) | Must be in place before stage 7's merge turns `main` into an auto-deploy trigger |
 | 2 | Bootstrap apply + 3 GitHub variables | The apply role can't create aliases or alarms, and the deploy roles don't exist, until this runs |
 | 3 | Push `phase-7-cd`, open the PR | CI on a real runner, plan comments for dev and prod |
 | 4 | Apply dev **from the branch** | Prove the alias, alarms and pipeline before merging, the way 6.7 did |
@@ -78,6 +79,100 @@ passes it from this secret. Without it, the plan on the PR fails.
 ```bash
 gh secret set ALARM_EMAIL --body "you@example.com"
 ```
+
+---
+
+## Stage 1b — Ruleset on `main` (issue #20)
+
+`main` has no branch protection and no ruleset (both checked 2026-09-23:
+`branches/main/protection` → 404, `rules/branches/main` → `[]`). The Phase 1
+gate most likely went with Phase 0's `git filter-repo` + force-push. Once
+`deploy.yml` is on `main`, a direct push would run CI and auto-deploy dev with
+nothing in front of it, so this has to be done **before stage 7**. It's
+independent of AWS, so any time before then works.
+
+The ruleset is `scripts/github/main-ruleset.json`:
+
+- **`required_status_checks`:** the aggregate `ci` job from `ci.yml`, pinned to
+  the GitHub Actions app (`integration_id` 15368, read off the check runs on
+  `main`), so no other app or status can satisfy it. `strict` is on: a PR must
+  be up to date with `main` before merging, so what CI tested is what lands.
+  Only `ci` is listed; new jobs go into its `needs`, not into the ruleset.
+- **`pull_request`:** every change to `main` goes through a PR, so direct
+  pushes are rejected. **0 required approvals, on purpose.** This is a solo
+  repo, and GitHub doesn't let a PR's author approve their own PR. With 1
+  required approval, the only way to merge would be a bypass actor, and then
+  the owner could also bypass `ci`. A required review with nobody to give it
+  is theatre. The gate that matters here is CI. Revisit if a second
+  contributor arrives.
+- **`non_fast_forward`, `deletion`:** no force-push to `main`, and it can't be
+  deleted. A force-push is exactly how the last gate got lost.
+- **`bypass_actors: []`:** the gate applies to the repo owner too, so
+  `gh pr merge --admin` can't skip a red `ci`. The escape hatch, if you ever
+  need one, is to set the ruleset's `enforcement` to `disabled` and back,
+  which is a deliberate, logged act, not a checkbox on a merge.
+
+Nothing in `.github/workflows/` pushes to `main` (`deploy.yml` reacts to CI
+via `workflow_run`), so no bot needs a bypass.
+
+**Apply** (repo admin; `gh auth status` should show the owner account):
+
+```bash
+gh api --method POST repos/Ayprusss/dejavu/rulesets \
+  -H "Accept: application/vnd.github+json" \
+  --input scripts/github/main-ruleset.json \
+  --jq '{id, name, enforcement}'
+```
+
+Keep the `id` it prints. To change the ruleset later, edit the JSON and
+`PUT` it rather than creating a second one:
+`gh api --method PUT repos/Ayprusss/dejavu/rulesets/<id> --input scripts/github/main-ruleset.json`.
+
+**Verify the configuration (read-only):**
+
+```bash
+gh api repos/Ayprusss/dejavu/rulesets --jq '.[] | {id, name, enforcement}'
+# the rules actually in force on main - expect deletion, non_fast_forward,
+# pull_request, required_status_checks
+gh api repos/Ayprusss/dejavu/rules/branches/main --jq '[.[].type] | sort'
+gh api repos/Ayprusss/dejavu/rules/branches/main \
+  --jq '.[] | select(.type=="required_status_checks") | .parameters'
+```
+
+**Verify it the way Phase 1 did: a PR with a failing test can't merge.**
+
+```bash
+git fetch origin
+git switch -c chore/ruleset-canary origin/main
+cat > backend/tests/rulesetCanary.test.js <<'EOF'
+// Deliberately failing: proves the ruleset on main blocks a red ci. Never merge.
+test('ruleset canary', () => {
+  expect(1).toBe(2);
+});
+EOF
+git add backend/tests/rulesetCanary.test.js
+git commit -m "chore: deliberately failing test to verify the main ruleset (do not merge)"
+git push -u origin chore/ruleset-canary
+gh pr create --base main --head chore/ruleset-canary \
+  --title "DO NOT MERGE: ruleset canary" \
+  --body "Deliberately failing test. Verifies that the main ruleset blocks a red ci (issue #20)."
+
+gh pr checks --watch            # wait for test-backend and ci to go red
+gh pr view --json mergeStateStatus --jq .mergeStateStatus   # expect BLOCKED
+gh pr merge --merge             # expect a refusal: required status check "ci" is failing
+gh pr merge --merge --admin     # expect a refusal too, since nobody can bypass
+
+gh pr close --delete-branch
+git switch phase-7-cd
+git branch -D chore/ruleset-canary
+```
+
+If either `gh pr merge` succeeds, the ruleset isn't doing its job. Revert the
+merge commit on `main` with a PR, and fix the ruleset before going on.
+
+Afterwards, fill in the date in `phase-7-steps.md` 7.12's Phase 1 line, tick
+the Phase 1 row in `dejavu-execution-plan.md`'s Verification table, and close
+issue #20.
 
 ---
 
@@ -351,6 +446,9 @@ aws lambda update-alias --function-name dejavu-dev-api --name live --function-ve
 ---
 
 ## Stage 7 — Merge
+
+**Before merging:** stage 1b's ruleset is active. Check with
+`gh api repos/Ayprusss/dejavu/rules/branches/main --jq '[.[].type] | sort'`.
 
 ```bash
 gh pr merge --merge
