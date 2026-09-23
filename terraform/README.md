@@ -308,6 +308,21 @@ terraform destroy \
   `lambda` security group (**20 min**) wait for Lambda's Hyperplane ENIs to
   be released. Don't cancel it.
 - Log groups go with it, so earlier Lambda logs are gone.
+- **Snapshots (issue #26).** Dev sets `skip_final_snapshot = true` and
+  automated backups go with the instance, so dev leaves nothing. Prod leaves
+  a manual snapshot, `dejavu-prod-final-<creation time>`, that Terraform
+  won't track or delete and that bills at $0.095/GB-month (up to ~$1.90/month
+  for 20 GB; no free allowance once the instance is gone). The decision is to
+  delete it once the teardown is verified: it holds seed data and test-mode
+  orders, and a re-apply never restores from it. Confirm both lists are
+  empty; the ~$0.20 floor assumes they are:
+  ```bash
+  aws rds describe-db-snapshots --snapshot-type manual \
+    --query 'DBSnapshots[].[DBSnapshotIdentifier,SnapshotCreateTime]'
+  aws rds delete-db-snapshot --db-snapshot-identifier dejavu-prod-final-<…>
+  aws rds describe-db-instance-automated-backups \
+    --query 'DBInstanceAutomatedBackups[].[DBInstanceIdentifier,Status]'
+  ```
 
 ### Re-apply (~13 min to a verified webhook)
 
