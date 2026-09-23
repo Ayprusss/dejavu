@@ -827,6 +827,12 @@ The full script is `phase-7-steps.md` 7.10. The shape:
    - a build that doesn't boot (`src/lambda.js` throws at require time)
    - a migration that fails (`SELECT 1/0;`): expect the alias not to move
      and the migrator-errors alarm to fire
+   - **where that leaves the schema:** the migrator doesn't pass
+     `singleTransaction`, so node-pg-migrate runs each migration in its own
+     transaction (7.4). A failed run leaves every migration *before* the
+     failing one committed, the failing one rolled back, and nothing after it
+     run — never half a migration. `SELECT name FROM pgmigrations` is the
+     record of exactly what applied; `migrate.sh` prints the same on failure
 6. **Clean up:**
    - delete the branch
    - `aws ecr batch-delete-image` for the drill tags
