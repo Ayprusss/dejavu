@@ -418,9 +418,11 @@ detection. Detection is 7.10's job.
 
 **First, check the RDS secret's rotation date** (issue #22). The master
 secret rotates weekly. For up to ~5 minutes after a rotation, a warm
-environment can fail one request with `28P01` (6.10). `smoke.sh` retries
-absorb one such failure (the harness proves it), but back-to-back failures
-while the rotation is still in progress could fail smoke and roll back a
+environment can hit a `28P01` (6.10). `pool.js` retries that connection
+once with a re-fetched password (logged as `db.auth_retry`), and `smoke.sh`'s
+retries are the backstop (the harness proves they absorb one failure). But
+while the rotation is still in progress the re-fetch returns the old password
+too. Back-to-back failures in that window could fail smoke and roll back a
 good deploy:
 
 ```bash
