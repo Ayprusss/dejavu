@@ -610,6 +610,22 @@ and confirming the harness caught it (red), then reverting (green again).
       has no `UpdateFunctionCode`/`PublishVersion`/`UpdateAlias` (7.3).
 - [x] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
       (unchanged). Only code auto-promotes, never infrastructure.
+- [x] **Every `deploy.yml` run is `main`'s copy** (issue #21). This is a
+      property of the design, not a gap:
+    - `workflow_dispatch` only works for a workflow that is on the default
+      branch. `deploy.yml` couldn't be dispatched at all until PR #28
+      (`61b9ee6`) merged it, and `gh workflow list` showed only CI,
+      gitleaks and Terraform until then. `workflow_run` also runs the
+      default branch's copy, so a change to `deploy.yml` first runs on the
+      merge that carries it, never on its PR. So the pre-merge pipeline
+      check (runbook stage 6) runs `migrate.sh` and `deploy.sh` locally with
+      admin credentials, and the first `deploy.yml` run is the merge's
+      `workflow_run` (stage 7).
+    - The `production` environment's deployment branch policy is custom and
+      lists only `main`, so every prod job runs on `main`. A promotion is
+      already `main`'s `workflow_run`. 7.10's drill and a prod
+      `terraform.yml` apply are dispatched from `main`. A drill's SHA goes
+      in the `sha` input, never in `--ref`. `dev` has no branch policy.
 - [x] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
       this with Trivy; the deploy path is where it matters most, because these
       jobs hold prod credentials). `actions/checkout` and
