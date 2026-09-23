@@ -473,6 +473,31 @@ The plan says under ~10 s, and exactly three checks.
       signal. Not checkout: it creates Stripe objects on every run. Write down
       why each is excluded. The roadmap asks "why not more?" (Both reasons
       are in `smoke.sh`'s own header comment.)
+- [x] **Known false-positive source: the weekly RDS secret rotation**
+      (issue #22). After a rotation, a warm environment with a stale cached
+      password fails its next new connection with one `28P01`. `pool.js`
+      then calls `invalidate()`, and the following request recovers (6.10
+      run 2). `/api/products` returns that failure as a 500. That could fail
+      smoke, and `deploy.sh` would roll back a good deploy. The rollback's
+      re-smoke is the most exposed, because it hits the previous version's
+      warm environments. A new version's environments are cold and fetch the
+      password as they connect.
+      **Decision: smoke's retries are the fix, and `smoke.sh` stays as it
+      is.** A `28P01` fails fast, not at the 4 s timeout. The retry fires
+      right away, after `invalidate()`, and costs about a second of the 15 s
+      budget. The harness now proves this, rather than it just being
+      reasoned about: one transient `/api/products` 500 → smoke passes;
+      in `deploy.sh`, no rollback; on the rollback's re-smoke, still exit 1,
+      not exit 2. It was mutation-tested with `MAX_ATTEMPTS=1`, which fails
+      5 checks. **What retries don't cover:** smoke doesn't pause between
+      attempts, so all 4 can land in the same seconds. If the rotation is
+      still in progress then (RDS has the new password but `AWSCURRENT`
+      doesn't yet, a window 6.10 didn't measure), every attempt can fail.
+      A backend retry-once wouldn't help there either, since it would
+      re-fetch the same old secret. The mitigation for that case is timing:
+      `phase-7-runbook.md` stages 6 and 10 check `NextRotationDate`. A
+      rollback inside a rotation window is suspect until the log is checked
+      for `28P01`.
 
 ### `promote-check.sh <sha>`
 
@@ -494,7 +519,8 @@ AWS credentials): happy path; smoke failure → rollback → exit 1; rollback
 smoke also failing → exit 2; migrator `FunctionError` → non-zero; missing
 rollback image → refuse; `publish-version` returning an existing version
 (no-op redeploy); the `$LATEST`-alias bootstrap case above; plus direct
-`smoke.sh` and `promote-check.sh` cases. 21/21 pass. Mutation-tested by
+`smoke.sh` and `promote-check.sh` cases. 21/21 pass. (Now 30/30, with the
+issue #22 rotation-blip cases under `smoke.sh` above.) Mutation-tested by
 temporarily disabling `migrate.sh`'s `FunctionError` check (`if false && ...`)
 and confirming the harness caught it (red), then reverting (green again).
 
@@ -868,6 +894,15 @@ the record on prod.
 **Make the break real, not a flag.** Don't add a `BREAK_ME` environment
 variable to the shipped code. A kill switch in prod code is its own bug.
 
+- [ ] **Check the RDS secret's `NextRotationDate` first, and don't drill
+      inside the rotation window** (issue #22; the command is in
+      `phase-7-runbook.md` stage 10). A rotation blip is a known
+      false-positive source for smoke-triggered rollback (7.4, `smoke.sh`).
+      Here it would also corrupt the measurement: a stray 5xx in
+      `Url5xxCount`, possibly a 5xx alarm the broken build didn't cause, and
+      a blip on the rollback's re-smoke. Record `LastRotatedDate` and
+      `NextRotationDate` with the numbers.
+
 - [ ] On a throwaway branch `drill/broken-build`, make `GET /api/products`
       throw (the controller, not the route: it has to pass lint and build). The
       image builds, passes Trivy, boots, answers `/api/status` 200, and fails
@@ -996,7 +1031,14 @@ Each one is either done or listed under a **"Known limitations"** heading in
 - [ ] Playwright E2E (Phase 4)
 - [ ] `idempotencyKey` from the frontend (Phase 3 / 7.0)
 - [ ] Least-privilege `dejavu_app` DB role (D8, Phase 6)
-- [ ] Retry once on `28P01` (6.10)
+- [ ] Retry once on `28P01` (6.10). **Still deferred, now on purpose**
+      (issue #22). The deploy-safety concern is covered: `smoke.sh`'s
+      retries absorb one blip, and the harness proves it (7.4). What's left
+      is a user-facing improvement, namely one invisible failed request per
+      warm environment per week. It isn't a correctness fix, and it doesn't
+      cover the mid-rotation window either (7.4). For "Known limitations",
+      one line: "a weekly secret rotation can cost one failed request per
+      warm Lambda environment."
 - [ ] Shared rate-limit store or WAF (6.9)
 - [ ] User-enumeration timing on login (6.9: 401 before bcrypt when the email
       doesn't exist)

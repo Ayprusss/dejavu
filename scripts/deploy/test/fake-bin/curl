@@ -67,6 +67,11 @@ fi
 SHA="$(jq -r '.sha' "$SRC" 2>/dev/null || echo "unknown")"
 BOOT_BROKEN="$DIR/versions/$VERSION.boot-broken"
 PRODUCTS_BROKEN="$DIR/versions/$VERSION.products-broken"
+# Holds a count N: the next N /api/products calls 500, then it's healthy again.
+# Models the weekly RDS rotation blip (issue #22, 6.10 run 2): one 28P01 per
+# warm environment, surfaced by productController as a 500, then recovery on
+# the very next request once pool.js has called invalidate().
+PRODUCTS_TRANSIENT="$DIR/versions/$VERSION.products-transient"
 
 STATUS=200
 BODY='{}'
@@ -90,6 +95,11 @@ else
       if [ -f "$PRODUCTS_BROKEN" ]; then
         # First drill (7.10): the controller throws, not the route, so it's
         # a 500 with a normal JSON error body, not a crash.
+        STATUS=500
+        BODY='{"message":"Internal server error"}'
+      elif [ -f "$PRODUCTS_TRANSIENT" ] && [ "$(cat "$PRODUCTS_TRANSIENT")" -gt 0 ]; then
+        REMAINING="$(cat "$PRODUCTS_TRANSIENT")"
+        echo "$((REMAINING - 1))" >"$PRODUCTS_TRANSIENT"
         STATUS=500
         BODY='{"message":"Internal server error"}'
       else

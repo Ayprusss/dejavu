@@ -74,6 +74,26 @@ fn_mark_products_broken() {
   touch "$STATE_DIR/functions/$1/versions/$2.products-broken"
 }
 
+# fn_mark_products_transient <function-name> <version> <n>
+# The next <n> /api/products calls against <version> 500, then it recovers -
+# the RDS rotation blip (issue #22).
+fn_mark_products_transient() {
+  mkdir -p "$STATE_DIR/functions/$1/versions"
+  echo "$3" >"$STATE_DIR/functions/$1/versions/$2.products-transient"
+}
+
+# assert_transient_consumed <function-name> <version> <name>
+# Guards against a vacuous pass: the blip must actually have been served.
+assert_transient_consumed() {
+  local actual
+  actual="$(cat "$STATE_DIR/functions/$1/versions/$2.products-transient" 2>/dev/null || echo "<missing>")"
+  if [ "$actual" = "0" ]; then
+    pass "$3"
+  else
+    fail_case "$3 (expected the transient failure to be served, counter=$actual)"
+  fi
+}
+
 # ecr_add <repo-basename> <sha>
 ecr_add() {
   mkdir -p "$STATE_DIR/ecr/$1/tags" "$STATE_DIR/ecr/$1/digests"
@@ -279,6 +299,67 @@ run_case "smoke: passes against a healthy version" 0 \
 fn_mark_products_broken "$API" 1
 run_case "smoke: fails when /api/products 500s" 1 \
   "$DEPLOY_DIR/smoke.sh" "https://api-dev.example.com" good-sha
+
+# ==============================================================================
+# Issue #22: the weekly RDS secret rotation costs one 28P01 per warm
+# environment (6.10 run 2), which /api/products - smoke's only DB-backed check
+# - surfaces as a single 500. smoke.sh's retries must absorb exactly that, or
+# a rotation turns a good deploy into a rollback. Remove the retries
+# (MAX_ATTEMPTS=1) and these cases go red.
+# ==============================================================================
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 good-sha
+fn_set_alias "$API" 1
+fn_mark_products_transient "$API" 1 1
+
+run_case "smoke: survives exactly one transient /api/products 500 (rotation blip)" 0 \
+  "$DEPLOY_DIR/smoke.sh" "https://api-dev.example.com" good-sha
+assert_transient_consumed "$API" 1 "smoke: the rotation blip was actually served, then retried"
+case "$LAST_OUTPUT" in
+  *"/api/products -> 500"*"/api/products -> 200"*)
+    pass "smoke: log shows the 500 then the 200 on retry"
+    ;;
+  *)
+    fail_case "smoke: log should show /api/products 500 then 200" "$LAST_OUTPUT"
+    ;;
+esac
+
+# The same blip during a real deploy's smoke must not roll back...
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 old-sha
+fn_set_latest "$API" old-sha
+fn_set_alias "$API" 1
+fn_set_next_version "$API" 2
+ecr_add dejavu-api old-sha
+ecr_add dejavu-api new-sha
+fn_mark_products_transient "$API" 2 1
+
+run_case "deploy: a rotation blip on the new version does not roll back" 0 \
+  "$DEPLOY_DIR/deploy.sh" dev new-sha
+assert_alias "$API" 2 "deploy: rotation blip - alias stays on the new version"
+assert_transient_consumed "$API" 2 "deploy: rotation blip was served to the new version's smoke"
+
+# ...and during the rollback's re-smoke (the previous version's environments
+# are the warm ones, so the likelier place for a stale cached password) it
+# must not escalate a healthy rollback (exit 1) into a page (exit 2) - the
+# 7.10 drill's own path.
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 old-sha
+fn_set_latest "$API" old-sha
+fn_set_alias "$API" 1
+fn_set_next_version "$API" 2
+ecr_add dejavu-api old-sha
+ecr_add dejavu-api new-sha
+fn_mark_products_broken "$API" 2
+fn_mark_products_transient "$API" 1 1
+
+run_case "deploy: a rotation blip on the rollback's re-smoke is still exit 1, not 2" 1 \
+  "$DEPLOY_DIR/deploy.sh" dev new-sha
+assert_alias "$API" 1 "deploy: rotation blip on rollback - alias back on the previous version"
+assert_transient_consumed "$API" 1 "deploy: rotation blip was served to the rollback's re-smoke"
 
 new_state_dir
 fn_init "$API" dejavu-api "https://api-dev.example.com"

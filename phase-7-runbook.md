@@ -416,6 +416,23 @@ detection. Detection is 7.10's job.
 
 ### The pipeline itself (7.4, 7.5)
 
+**First, check the RDS secret's rotation date** (issue #22). The master
+secret rotates weekly. For up to ~5 minutes after a rotation, a warm
+environment can fail one request with `28P01` (6.10). `smoke.sh` retries
+absorb one such failure (the harness proves it), but back-to-back failures
+while the rotation is still in progress could fail smoke and roll back a
+good deploy:
+
+```bash
+aws secretsmanager list-secrets --filters Key=name,Values='rds!' \
+  --query 'SecretList[].{Name:Name,Last:LastRotatedDate,Next:NextRotationDate,Rules:RotationRules}'
+```
+
+If `Next` falls within your session, deploy before it, or wait until `Last` has
+moved past it and then another 5 minutes (the password cache TTL). A
+rollback that happens during that window is suspect. Check the log for
+`28P01` before treating it as a real failure.
+
 Deploy a real CI-built SHA through `deploy.yml`, from the branch. Use `main`'s
 merge commit, which `push-image` already pushed to both repos:
 
@@ -592,6 +609,15 @@ first apply after a stage 11 teardown.
 
 The full script is `phase-7-steps.md` 7.10. The shape:
 
+0. **Check `NextRotationDate` first, and don't drill inside the rotation
+   window** (issue #22). Run the `aws secretsmanager list-secrets` command
+   from stage 6 (`Next` and `Last`). A rotation blip adds a stray 5xx to the
+   drill's count, and the 5xx alarm can fire because of it. It can also land
+   on the rollback's re-smoke, the previous version's warm environments being
+   the exposed ones. Start only if `Next` is well past the drill's end
+   (allow an hour for dev rehearsal, prod, and the second and third drills).
+   Otherwise wait until `Last` moves past it and then 5 more minutes. Record
+   both values next to the drill's numbers.
 1. **Broken build.** On `drill/broken-build`, make `GET /api/products`'s
    controller throw. Push that image **by hand** with admin credentials. The
    push role only trusts `main`, and that stays.
