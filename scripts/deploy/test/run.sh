@@ -166,6 +166,69 @@ assert_file_absent() {
   fi
 }
 
+# assert_contains <haystack> <needle> <name>
+assert_contains() {
+  case "$1" in
+    *"$2"*) pass "$3" ;;
+    *) fail_case "$3 (expected to find: $2)" "$1" ;;
+  esac
+}
+
+# assert_not_contains <haystack> <needle> <name>
+assert_not_contains() {
+  case "$1" in
+    *"$2"*) fail_case "$3 (unexpectedly found: $2)" "$1" ;;
+    *) pass "$3" ;;
+  esac
+}
+
+summary() { cat "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "<no summary written>"; }
+calls() { cat "$STATE_DIR/calls.log" 2>/dev/null || echo "<no aws calls>"; }
+
+# first_call_line <pattern> - line number of the first aws call matching it
+first_call_line() {
+  grep -n -m1 -- "$1" "$STATE_DIR/calls.log" 2>/dev/null | cut -d: -f1
+}
+
+# fn_set_versions <function-name> <n> - published versions 1..n, each on its
+# own sha ("v1".."vn"), with $LATEST on vn's code.
+fn_set_versions() {
+  local i
+  for i in $(seq 1 "$2"); do
+    fn_set_version "$1" "$i" "v$i"
+  done
+  fn_set_latest "$1" "v$2"
+  fn_set_next_version "$1" "$(($2 + 1))"
+}
+
+# assert_versions_present <function-name> <name> <version>...
+assert_versions_present() {
+  local fn="$1" name="$2" v missing=""
+  shift 2
+  for v in "$@"; do
+    [ -f "$STATE_DIR/functions/$fn/versions/$v.json" ] || missing="$missing $v"
+  done
+  if [ -z "$missing" ]; then
+    pass "$name"
+  else
+    fail_case "$name (missing:$missing)"
+  fi
+}
+
+# assert_versions_absent <function-name> <name> <version>...
+assert_versions_absent() {
+  local fn="$1" name="$2" v present=""
+  shift 2
+  for v in "$@"; do
+    [ -f "$STATE_DIR/functions/$fn/versions/$v.json" ] && present="$present $v"
+  done
+  if [ -z "$present" ]; then
+    pass "$name"
+  else
+    fail_case "$name (still present:$present)"
+  fi
+}
+
 API="dejavu-dev-api"
 MIGRATOR="dejavu-dev-migrator"
 
@@ -183,6 +246,14 @@ ecr_add dejavu-api new-sha
 
 run_case "deploy: happy path" 0 "$DEPLOY_DIR/deploy.sh" dev new-sha
 assert_alias "$API" 2 "deploy: happy path shifts alias to the new version"
+# 7.4: env, SHA, image digest, old -> new version, smoke timings, rolled back.
+SUMMARY="$(summary)"
+assert_contains "$SUMMARY" "### Deploy - dev" "deploy summary: names the env"
+assert_contains "$SUMMARY" "| SHA | \`new-sha\` |" "deploy summary: names the SHA"
+assert_contains "$SUMMARY" "sha256:digest-new-sha" "deploy summary: carries the image digest"
+assert_contains "$SUMMARY" "| Version | \`1\` -> \`2\` |" "deploy summary: old -> new version"
+assert_contains "$SUMMARY" "| Smoke | new version: pass in " "deploy summary: smoke timing"
+assert_contains "$SUMMARY" "| Rolled back | false |" "deploy summary: not rolled back"
 
 # ==============================================================================
 # Case 2: smoke failure -> rollback -> exit 1
@@ -199,6 +270,10 @@ fn_mark_products_broken "$API" 2 # the version about to be published as "2"
 
 run_case "deploy: smoke failure rolls back" 1 "$DEPLOY_DIR/deploy.sh" dev new-sha
 assert_alias "$API" 1 "deploy: rollback lands back on the previous version"
+SUMMARY="$(summary)"
+assert_contains "$SUMMARY" "| Smoke | new version: FAIL in " "deploy summary (rollback): new version's smoke timing"
+assert_contains "$SUMMARY" "; rollback: pass in " "deploy summary (rollback): rollback's re-smoke timing"
+assert_contains "$SUMMARY" "| Rolled back | true |" "deploy summary (rollback): says it rolled back"
 
 # ==============================================================================
 # Case 3: rollback smoke also fails -> exit 2
@@ -216,6 +291,9 @@ fn_mark_products_broken "$API" 1 # AND the rollback target
 
 run_case "deploy: rollback smoke also fails" 2 "$DEPLOY_DIR/deploy.sh" dev new-sha
 assert_alias "$API" 1 "deploy: alias still moved to the rollback target even though its smoke also failed"
+SUMMARY="$(summary)"
+assert_contains "$SUMMARY" "; rollback: FAIL in " "deploy summary (exit 2): rollback's re-smoke failed"
+assert_contains "$SUMMARY" "page a human" "deploy summary (exit 2): says it's a page, not a success"
 
 # ==============================================================================
 # Case 4: migrator FunctionError -> non-zero, payload printed
@@ -233,6 +311,41 @@ case "$LAST_OUTPUT" in
     fail_case "migrate: FunctionError case should print the payload/error" "$LAST_OUTPUT"
     ;;
 esac
+assert_contains "$LAST_OUTPUT" "one transaction per migration" \
+  "migrate: FunctionError case says where the schema was left"
+
+# ==============================================================================
+# migrate.sh happy path: flags, order, and the payload in the log
+# ==============================================================================
+new_state_dir
+fn_init "$MIGRATOR" dejavu-migrator ""
+
+run_case "migrate: happy path" 0 "$DEPLOY_DIR/migrate.sh" dev good-sha
+assert_contains "$LAST_OUTPUT" '{"migrations":["001_init.sql"]}' \
+  "migrate: success still prints the raw payload"
+assert_contains "$LAST_OUTPUT" "Applied: 001_init.sql" "migrate: names the applied migrations"
+CALLS="$(calls)"
+assert_contains "$CALLS" "update-function-code --region us-east-1 --function-name dejavu-dev-migrator --image-uri ${ECR_MIGRATOR_REPO}:good-sha" \
+  "migrate: points the migrator at dejavu-migrator:<sha>"
+# Correction 6. Both would be invisible to every other assertion here.
+assert_contains "$CALLS" "AWS_MAX_ATTEMPTS=1 aws lambda invoke" "migrate: invoke runs with AWS_MAX_ATTEMPTS=1"
+assert_contains "$CALLS" "--cli-read-timeout 310" "migrate: invoke passes --cli-read-timeout 310"
+assert_contains "$CALLS" '--payload {"action":"up"}' 'migrate: invoke sends {"action":"up"}'
+UPDATE_LINE="$(first_call_line "lambda update-function-code")"
+WAIT_LINE="$(first_call_line "lambda wait function-updated-v2")"
+INVOKE_LINE="$(first_call_line "lambda invoke")"
+if [ -n "$UPDATE_LINE" ] && [ -n "$WAIT_LINE" ] && [ -n "$INVOKE_LINE" ] &&
+  [ "$UPDATE_LINE" -lt "$WAIT_LINE" ] && [ "$WAIT_LINE" -lt "$INVOKE_LINE" ]; then
+  pass "migrate: update -> wait function-updated-v2 -> invoke, in that order"
+else
+  fail_case "migrate: expected update -> wait -> invoke order" "$CALLS"
+fi
+
+new_state_dir
+fn_init "$MIGRATOR" dejavu-migrator ""
+set_scenario "migrator-none-pending"
+run_case "migrate: nothing pending is success" 0 "$DEPLOY_DIR/migrate.sh" dev good-sha
+assert_contains "$LAST_OUTPUT" "No migrations to run" "migrate: says so when nothing was pending"
 
 # ==============================================================================
 # Case 5: missing rollback image -> refuse to deploy
@@ -379,6 +492,93 @@ ecr_add dejavu-api different-sha
 ecr_add dejavu-migrator different-sha
 run_case "promote-check: mismatched sha refuses to promote" 1 \
   "$DEPLOY_DIR/promote-check.sh" different-sha
+
+# ==============================================================================
+# Prune: keep the newest 10 published versions plus whatever `live` is on
+# ==============================================================================
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_versions "$API" 12
+fn_set_alias "$API" 12
+ecr_add dejavu-api v12
+ecr_add dejavu-api new-sha
+
+run_case "prune: a healthy deploy with 12 old versions" 0 "$DEPLOY_DIR/deploy.sh" dev new-sha
+assert_alias "$API" 13 "prune: alias on the new version 13"
+assert_versions_absent "$API" "prune: versions older than the newest 10 are deleted" 1 2 3
+assert_versions_present "$API" "prune: the newest 10 are kept" 4 5 6 7 8 9 10 11 12 13
+
+# The alias target is kept even when it's older than the newest 10: here
+# `live` was already on version 1 (an earlier rollback), the deploy of
+# version 13 fails smoke, and the rollback lands back on 1.
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_versions "$API" 12
+fn_set_alias "$API" 1
+ecr_add dejavu-api v1
+ecr_add dejavu-api new-sha
+fn_mark_products_broken "$API" 13
+
+run_case "prune: after a rollback onto an old version" 1 "$DEPLOY_DIR/deploy.sh" dev new-sha
+assert_alias "$API" 1 "prune: alias rolled back onto version 1"
+assert_versions_present "$API" "prune: never deletes the alias target, however old" 1
+assert_versions_absent "$API" "prune: still deletes the rest beyond the newest 10" 2 3
+assert_versions_present "$API" "prune: the newest 10 are kept after a rollback" 4 5 6 7 8 9 10 11 12 13
+
+# Exit 2 is an unresolved incident: prune must not touch anything.
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_versions "$API" 12
+fn_set_alias "$API" 12
+ecr_add dejavu-api v12
+ecr_add dejavu-api new-sha
+fn_mark_products_broken "$API" 13
+fn_mark_products_broken "$API" 12
+
+run_case "prune: skipped when the rollback's smoke also fails" 2 "$DEPLOY_DIR/deploy.sh" dev new-sha
+assert_not_contains "$(calls)" "delete-function" "prune: no delete-function calls on exit 2"
+assert_versions_present "$API" "prune: every version survives an exit 2" 1 2 3 4 5 6 7 8 9 10 11 12 13
+
+# ==============================================================================
+# smoke.sh's 15s budget is hard: no request's timeout outlasts what's left.
+# bash imports SECONDS from the environment, so `env SECONDS=N` starts the
+# script's stopwatch N seconds in, without the test having to sleep.
+# ==============================================================================
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 good-sha
+fn_set_alias "$API" 1
+
+run_case "smoke budget: fresh run" 0 "$DEPLOY_DIR/smoke.sh" "https://api-dev.example.com" good-sha
+TIMEOUTS="$(sort -u "$STATE_DIR/curl-timeouts.log" 2>/dev/null | tr '\n' ' ')"
+if [ "$TIMEOUTS" = "4 " ]; then
+  pass "smoke budget: a fresh run uses the full 4s per request"
+else
+  fail_case "smoke budget: expected every -m to be 4, got: ${TIMEOUTS:-<none>}"
+fi
+
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 good-sha
+fn_set_alias "$API" 1
+
+run_case "smoke budget: 12s already spent" 0 \
+  env SECONDS=12 "$DEPLOY_DIR/smoke.sh" "https://api-dev.example.com" good-sha
+MAX_TIMEOUT="$(sort -n "$STATE_DIR/curl-timeouts.log" 2>/dev/null | tail -n1)"
+if [ -n "$MAX_TIMEOUT" ] && [ "$MAX_TIMEOUT" -le 3 ]; then
+  pass "smoke budget: with 3s left, no request gets more than 3s (max -m $MAX_TIMEOUT)"
+else
+  fail_case "smoke budget: with 3s left, expected every -m <= 3, got max ${MAX_TIMEOUT:-<none>}"
+fi
+
+new_state_dir
+fn_init "$API" dejavu-api "https://api-dev.example.com"
+fn_set_version "$API" 1 good-sha
+fn_set_alias "$API" 1
+
+run_case "smoke budget: already out of budget fails" 1 \
+  env SECONDS=15 "$DEPLOY_DIR/smoke.sh" "https://api-dev.example.com" good-sha
+assert_file_absent "$STATE_DIR/curl-timeouts.log" "smoke budget: out of budget makes no request at all"
 
 # ==============================================================================
 echo
