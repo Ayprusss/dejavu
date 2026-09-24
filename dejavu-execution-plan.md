@@ -609,8 +609,14 @@ first apply (issue #21). The PR #28 merge fired `deploy.yml` through
 the bootstrap apply that creates the deploy roles (runbook stage 2) hasn't
 run. The same merge's `apply-dev` planned 15 to add, 2 to change and 2 to
 destroy, then skipped its `terraform apply` step and finished green, so dev
-is still on its Phase 6 shape and URL. That green-with-nothing-applied is
-not yet diagnosed.
+is still on its Phase 6 shape and URL. The cause was `setup-terraform`'s
+default wrapper. It replaces `terraform` with a Node script that treats
+exit 2 as success and exits 0. It also writes its own `exitcode` output,
+and the plan step's `exitcode=$?` then overwrote that output with `0`, so
+every `== '2'` gate skipped. The fix is `terraform_wrapper: false` on every
+setup-terraform step. The apply plans now also fail on any code other than
+0/2, or on a code that disagrees with the saved plan's `applyable` flag
+(issue #12, 7.5).
 
 **An alias on `$LATEST` looks like a rollback target and isn't one.**
 Terraform creates `live` pointing at `$LATEST`, because `publish = true`
