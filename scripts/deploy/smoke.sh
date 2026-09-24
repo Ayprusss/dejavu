@@ -14,7 +14,8 @@
 #     three don't already cover end to end (the DB write path is exercised
 #     by every real order, not by a smoke test).
 #
-# Budget: ~4s per request, a couple of retries, but a hard ~15s total. The
+# Budget: ~4s per request (clamped to whatever is left of the total), a
+# couple of retries, but a hard 15s total. The
 # first request after a shift is a cold start (p50 ~1.16s, max 1.54s seen in
 # 6.9), so a single try with a short timeout would flake - and a flaky smoke
 # test is a random rollback (deploy.sh's whole reason to call this script).
@@ -37,15 +38,22 @@ trap 'rm -f "$TMP_BODY" "$TMP_ERR"' EXIT
 # stopwatch - no date-arithmetic needed, and it works the same on the
 # GNU date (Linux runners) and BSD date (a human running this on a Mac).
 get_with_retries() {
-  local path="$1" attempt=0 status elapsed t0
+  local path="$1" attempt=0 status elapsed t0 timeout
   while [ "$attempt" -lt "$MAX_ATTEMPTS" ]; do
     attempt=$((attempt + 1))
     if [ "$SECONDS" -ge "$TOTAL_BUDGET" ]; then
       echo "  ${path}: out of the ${TOTAL_BUDGET}s total budget (after attempt $((attempt - 1)))" >&2
       return 1
     fi
+    # The budget is hard, not "checked between attempts": an attempt that
+    # starts at 14s gets 1s, not the full 4s, so the whole script can never
+    # run past TOTAL_BUDGET by up to a request's worth.
+    timeout=$((TOTAL_BUDGET - SECONDS))
+    if [ "$timeout" -gt "$PER_REQUEST_TIMEOUT" ]; then
+      timeout=$PER_REQUEST_TIMEOUT
+    fi
     t0=$SECONDS
-    if status="$(curl -sS -o "$TMP_BODY" -w '%{http_code}' -m "$PER_REQUEST_TIMEOUT" "${URL}${path}" 2>"$TMP_ERR")"; then
+    if status="$(curl -sS -o "$TMP_BODY" -w '%{http_code}' -m "$timeout" "${URL}${path}" 2>"$TMP_ERR")"; then
       elapsed=$((SECONDS - t0))
       echo "  ${path} -> ${status} in ${elapsed}s (attempt ${attempt}/${MAX_ATTEMPTS})" >&2
       if [ "$status" = "200" ]; then

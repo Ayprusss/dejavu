@@ -36,8 +36,11 @@ const MIGRATIONS_TABLE = 'pgmigrations';
  *
  * node-pg-migrate takes a Postgres advisory lock (a fixed, well-known id, for
  * the duration of the run), so two concurrent invocations of this handler
- * serialise against each other rather than racing — the second simply waits
- * for the lock rather than running anything twice.
+ * can't race. The lock mode isn't set, and 9.0.0's default is 'fail': the
+ * second invocation throws "Another migration is already running" at once
+ * rather than waiting, and runs nothing. migrate.sh sees that as a
+ * FunctionError. The shared deploy concurrency group keeps it from happening
+ * in CI.
  */
 const up = async () => {
   const buildConnectionOptions = require('./db/connectionOptions');

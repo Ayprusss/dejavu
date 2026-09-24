@@ -421,7 +421,10 @@ sequence of stages.
       the migrator calls it (single transaction for the whole run, or one per
       migration?). A failure halfway through a multi-migration deploy should
       leave the schema at a known point, and the runbook has to say which.
-      **Confirmed from `backend/node_modules/node-pg-migrate/dist/legacy/{runner,migration,migrationBuilder}.js`:**
+      **Confirmed from `backend/node_modules/node-pg-migrate/dist/legacy/{runner,migration,migrationBuilder}.js`**
+      (re-checked in the #11 audit against `dist/bundle/index.js`, which is
+      what `import('node-pg-migrate')` actually resolves to under 9.0.0's
+      `exports` map - same logic):
       `runner()` only wraps the whole batch in one `BEGIN`/`COMMIT` when
       `options.singleTransaction` is truthy; `backend/src/migrator.js`'s
       `up()` never sets it, so it's `undefined` (falsy) - despite the
@@ -433,8 +436,17 @@ sequence of stages.
       halfway through a multi-migration deploy leaves every earlier migration
       in that run committed and the failing one rolled back - the schema
       lands exactly at "all migrations before the failing one," never
-      partially applied. `backend/MIGRATIONS.md` (7.6) should state this
-      plainly for the runbook.
+      partially applied. (A failing statement doesn't get an explicit
+      `ROLLBACK` from `_apply`; the runner's `finally` closes the connection,
+      which ends the open transaction the same way.) `migrate.sh` prints this
+      on every `FunctionError`, so it's in the job log at the moment it
+      matters; `backend/MIGRATIONS.md` (7.6) and the runbook's drill stage
+      should state it plainly too - **still open, outside 7.4's files**.
+      Related, found in the same audit: the migrator doesn't set
+      `advisoryLockMode`, so it's the default `"fail"` - a concurrent second
+      `up` throws "Another migration is already running" at once rather than
+      waiting (`migrate.sh`'s comment now says so; `src/migrator.js`'s JSDoc
+      on `up()` still says "waits").
 
 ### `deploy.sh <env> <sha>`
 
@@ -472,8 +484,11 @@ sequence of stages.
       deleting Lambda versions.
 - [x] Write the outcome to `$GITHUB_STEP_SUMMARY`: env, SHA, image digest, old
       version → new version, smoke timings, and whether it rolled back.
-      (Smoke *timings* live in `smoke.sh`'s own stdout, captured in the job
-      log rather than duplicated into the summary table.)
+      (The summary's `Smoke` row has each run's wall-clock time and result -
+      the new version's, and the rollback's re-smoke if there was one; the
+      per-request breakdown stays in `smoke.sh`'s own lines in the job log.
+      The row was missing until the #11 audit; the harness now asserts
+      every field.)
 
 ### `smoke.sh <url> <sha>`
 
@@ -487,6 +502,10 @@ The plan says under ~10 s, and exactly three checks.
       total budget**. The first request after a shift is a cold start (p50
       ≈1.16 s, max seen 1.54 s in 6.9), so a single try with a 1 s timeout
       would flake. A flaky smoke test is a random rollback.
+      (The budget was only checked *between* attempts until the #11 audit,
+      so a run could overshoot by one request's 4 s. Each request's `-m` is
+      now clamped to whatever is left of the 15 s; the harness proves it by
+      starting smoke's `SECONDS` stopwatch at 12 and at 15.)
 - [x] Not `/api/ready`: it duplicates `/api/products`'s DB check with less
       signal. Not checkout: it creates Stripe objects on every run. Write down
       why each is excluded. The roadmap asks "why not more?" (Both reasons
@@ -565,6 +584,32 @@ rollback image → refuse; `publish-version` returning an existing version
 issue #22 rotation-blip cases under `smoke.sh` above.) Mutation-tested by
 temporarily disabling `migrate.sh`'s `FunctionError` check (`if false && ...`)
 and confirming the harness caught it (red), then reverting (green again).
+
+**#11 audit** (every box above checked against the code one by one). Three
+boxes were ticked on behaviour nothing tested, and two didn't fully match
+their own text. Now **70/70**. The fake `aws` logs every call (with the
+`AWS_MAX_ATTEMPTS` it saw), and the fake `curl` logs each `-m`, so the
+harness asserts on what the scripts *sent* as well as the state they left:
+
+- `migrate.sh` happy path: `--image-uri dejavu-migrator:<sha>`, update →
+  `wait function-updated-v2` → invoke in that order, `AWS_MAX_ATTEMPTS=1`,
+  `--cli-read-timeout 310`, `{"action":"up"}`, payload printed on success.
+  It now also names the applied migrations, or says "No migrations to run".
+  That line used to exist only in CloudWatch, though the runbook's stage 6
+  expects it in `migrate.sh`'s output.
+- The job summary: every field, including the new `Smoke` row and the
+  exit-2 "page a human".
+- Prune: newest 10 kept, older deleted; an alias target older than the
+  newest 10 survives (rollback onto version 1); nothing deleted on exit 2.
+- The smoke budget is hard (above).
+
+Each new check was mutation-tested: removing the `-m` clamp, the `Smoke` row,
+`AWS_MAX_ATTEMPTS=1`, `--cli-read-timeout 310`, the schema-state message, the
+"No migrations to run" line, prune's alias-target exemption or its exit-2
+skip, or raising `KEEP_COUNT`, each turns the harness red. **Unverified
+live:** the harness can't show real AWS output shapes, the real
+`function-updated-v2` waiter, or a real publish-version no-op. Those need
+runbook stage 6 (dev) and stage 10 (the drill).
 
 ---
 

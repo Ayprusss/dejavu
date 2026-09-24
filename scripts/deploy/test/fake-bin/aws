@@ -14,6 +14,12 @@ set -euo pipefail
 
 : "${FAKE_AWS_STATE_DIR:?FAKE_AWS_STATE_DIR must be set for the fake aws}"
 
+# One line per call, in order, so run.sh can assert on what the scripts sent
+# (flags, call order, the AWS_MAX_ATTEMPTS the CLI would have seen) and not
+# just on the state they left behind.
+printf 'AWS_MAX_ATTEMPTS=%s aws %s\n' "${AWS_MAX_ATTEMPTS:-<unset>}" "$*" \
+  >>"$FAKE_AWS_STATE_DIR/calls.log"
+
 SERVICE="$1"
 OP="$2"
 shift 2
@@ -180,6 +186,9 @@ case "$SERVICE $OP" in
       # metadata, and the stack trace in the payload file, not the exit code.
       printf '{"errorType":"Error","errorMessage":"division by zero","trace":["at up (/var/task/src/migrator.js:1:1)"]}' >"$OUTFILE"
       printf '{"StatusCode":200,"FunctionError":"Unhandled","ExecutedVersion":"$LATEST"}'
+    elif printf '%s' "$SCENARIO" | grep -q "migrator-none-pending"; then
+      printf '{"migrations":[]}' >"$OUTFILE"
+      printf '{"StatusCode":200,"ExecutedVersion":"$LATEST"}'
     else
       printf '{"migrations":["001_init.sql"]}' >"$OUTFILE"
       printf '{"StatusCode":200,"ExecutedVersion":"$LATEST"}'

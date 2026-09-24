@@ -17,7 +17,13 @@ while [ $# -gt 0 ]; do
       OUTFILE="$2"
       shift 2
       ;;
-    -w | -m)
+    -m)
+      # Logged so run.sh can prove smoke.sh's per-request timeout never
+      # outruns what's left of its total budget.
+      echo "$2" >>"$FAKE_AWS_STATE_DIR/curl-timeouts.log"
+      shift 2
+      ;;
+    -w)
       shift 2
       ;;
     -*)
