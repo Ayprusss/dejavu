@@ -169,16 +169,23 @@ it instead of `req.ip`).
 
 RDS rotates the master password itself, every 7 days, in the
 `rds!db-…` secret. The app never needs a redeploy for it:
-`src/db/credentials.js` caches the password for 5 minutes, and `pool.js`
-calls `invalidate()` on a `28P01`. Measured against two real `rotate-secret`
-runs:
+`src/db/credentials.js` caches the password for 5 minutes. On a `28P01`,
+`pool.js` calls `invalidate()` and retries the connection once with a
+re-fetched password, logged as `db.auth_retry` (Phase 7, PR #32). Measured
+against two real `rotate-secret` runs, before that retry existed:
 
 - A connection that is **already open** survives the rotation. 1,078
   requests over ~12 minutes of continuous traffic, zero errors.
-- A **new** connection opened while the old password is still cached fails
-  once (`/api/ready` → 503, `28P01`) and the very next request recovers.
+- A **new** connection opened while the old password is still cached failed
+  once (`/api/ready` → 503, `28P01`) and the very next request recovered.
   That happens to a warm environment idle for >30 s (the pool's idle timeout
   fires on thaw) whose password was fetched <5 min before the rotation.
+  With the retry, the same case is one slower request (≈277 ms for the
+  Secrets Manager re-fetch plus TLS), not a failed one.
+- What can still fail: a request that lands **mid-rotation**, when RDS
+  already has the new password but the secret's `AWSCURRENT` doesn't yet.
+  The re-fetch returns the old password too, and the second `28P01` goes to
+  the caller. 6.10 didn't measure how long that window is.
 - A rotation takes ~70 s. When it finishes, `AWSPENDING` stays attached to
   the same version as `AWSCURRENT`. That is normal, not a stuck rotation.
 
