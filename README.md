@@ -119,7 +119,7 @@ deliveries" test **still passes when its file runs as a whole**, three runs
 out of three. It fails only when run on its own. The guarantee is held by
 `concurrency.test.js`, not by that test. The execution plan's older claim
 that it failed "exactly the two idempotency tests" was overstated, and has
-been corrected.
+been corrected. Fixing the test is tracked in [#40](https://github.com/Ayprusss/dejavu/issues/40).
 
 ## Run it locally
 
@@ -198,7 +198,8 @@ Deferred on purpose, with the reasons in the linked docs:
   is mid-flight can still fail once. The connection retry covers the
   stale-cache case, not that one.
 - **`webhook.test.js`'s concurrent-delivery test** doesn't catch a broken
-  event claim when run with its file. See the mutation check above.
+  event claim when run with its file. See the mutation check above and
+  [#40](https://github.com/Ayprusss/dejavu/issues/40).
 - **No UI for claiming a guest order.** `POST /api/user/orders/claim` exists
   and is tested, but the storefront doesn't call it yet.
 

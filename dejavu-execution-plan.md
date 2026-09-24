@@ -303,7 +303,7 @@ Two things fixed it. A barrier in the Stripe stub holds every delivery until all
 - **Event claim reverted to read-then-write:** 1 failure, `concurrency.test.js`'s race test. `webhook.test.js`'s "two concurrent deliveries" test **stays green whenever its file runs as a whole**, and fails only when run on its own. So the barrier alone doesn't reliably force the interleaving, and the guarantee is held by `concurrency.test.js`.
 - **Atomic decrement reverted to read-modify-write:** 4 failures, the two race tests in `concurrency.test.js` and `webhook.test.js`'s "lets exactly one of two concurrent buyers take the last unit" and "never lets stock go negative".
 
-Each property is still caught by at least one test, which is what the exit criterion needs. A suite that has never been run against broken code is a guess.
+Each property is still caught by at least one test, which is what the exit criterion needs. Making the webhook test force the overlap is issue #40. A suite that has never been run against broken code is a guess.
 
 **`pool.js` is a module singleton and `singleFork` shares it across files.** `pool.end()` in one file's `afterAll` handed the next file a closed pool — a connection error in whichever file happened to run second, pointing at innocent code. Vitest tears the worker down itself, so nothing ends the pool.
 
