@@ -155,11 +155,17 @@ FUNCTION_URL="$(aws lambda get-function-url-config \
   --qualifier live \
   --output json | jq -r '.FunctionUrl')"
 
+# Wall-clock seconds per smoke run, for the job summary (7.4 asks for smoke
+# timings there). The per-request breakdown stays in smoke.sh's own log
+# lines; the summary only needs "how long, and did it pass".
 ROLLED_BACK=false
+SMOKE_T0=$SECONDS
 if "$SCRIPT_DIR/smoke.sh" "$FUNCTION_URL" "$SHA"; then
+  SMOKE_TIMINGS="new version: pass in $((SECONDS - SMOKE_T0))s"
   EXIT_CODE=0
   OUTCOME="deployed and healthy"
 else
+  SMOKE_TIMINGS="new version: FAIL in $((SECONDS - SMOKE_T0))s"
   echo "::error::smoke failed against version ${NEW_VERSION} (sha ${SHA}) - rolling back to ${PREVIOUS_VERSION} (sha ${PREVIOUS_SHA})"
   aws lambda update-alias \
     --region "$AWS_REGION" \
@@ -172,10 +178,13 @@ else
   # A rollback that doesn't pass its own smoke test is a page, not a success
   # (7.4's plan text, verbatim) - re-smoke against the SHA the rollback
   # target actually runs, not the SHA we were trying to ship.
+  SMOKE_T0=$SECONDS
   if "$SCRIPT_DIR/smoke.sh" "$FUNCTION_URL" "$PREVIOUS_SHA"; then
+    SMOKE_TIMINGS="${SMOKE_TIMINGS}; rollback: pass in $((SECONDS - SMOKE_T0))s"
     EXIT_CODE=1
     OUTCOME="smoke failed, rolled back to ${PREVIOUS_VERSION} - rollback is healthy"
   else
+    SMOKE_TIMINGS="${SMOKE_TIMINGS}; rollback: FAIL in $((SECONDS - SMOKE_T0))s"
     EXIT_CODE=2
     OUTCOME="smoke failed, rollback to ${PREVIOUS_VERSION} ALSO failed smoke - page a human"
   fi
@@ -226,10 +235,12 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "| SHA | \`${SHA}\` |"
     echo "| Image digest | \`${NEW_DIGEST:-n/a}\` |"
     echo "| Version | \`${PREVIOUS_VERSION}\` -> \`${NEW_VERSION}\` |"
+    echo "| Smoke | ${SMOKE_TIMINGS} |"
     echo "| Rolled back | ${ROLLED_BACK} |"
     echo "| Outcome | ${OUTCOME} |"
   } >>"$GITHUB_STEP_SUMMARY"
 fi
 
+log "Smoke: ${SMOKE_TIMINGS}"
 log "Outcome: ${OUTCOME}"
 exit "$EXIT_CODE"

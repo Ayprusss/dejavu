@@ -47,9 +47,11 @@ log "Invoking ${FUNCTION_NAME} with {\"action\":\"up\"}"
 # migrator's function timeout (300s), and its default retry-on-timeout would
 # invoke the handler a second time while the first run was still in flight.
 # node-pg-migrate's advisory lock (PG_MIGRATE_LOCK_ID in its runner) means the
-# second call just waits and then fails instead of corrupting anything, but
-# it still turns a slow-but-successful migration into a red job for no
-# reason. --cli-read-timeout 310 outlasts the function timeout;
+# second call can't run anything twice - the migrator doesn't set
+# advisoryLockMode, so it's the default "fail" and the second call throws
+# "Another migration is already running" at once - but that still turns a
+# slow-but-successful migration into a red job for no reason.
+# --cli-read-timeout 310 outlasts the function timeout;
 # AWS_MAX_ATTEMPTS=1 disables the CLI's SDK-level retry entirely.
 INVOKE_RESULT="$(AWS_MAX_ATTEMPTS=1 aws lambda invoke \
   --region "$AWS_REGION" \
@@ -75,8 +77,27 @@ echo "------------------------------------------------------"
 # resolve to "" instead of jq printing the literal string "null".
 FUNCTION_ERROR="$(echo "$INVOKE_RESULT" | jq -r '.FunctionError // empty')"
 
+# Where a failed run leaves the schema (7.4, verified against node-pg-migrate
+# 9.0.0's runner): the migrator doesn't pass singleTransaction, so each
+# migration runs in its own BEGIN/COMMIT, not one transaction for the run.
+# Every migration before the failing one is committed and recorded in
+# pgmigrations; the failing one is rolled back whole; none after it ran.
 if [ -n "$FUNCTION_ERROR" ]; then
+  echo "Schema state: migrations before the failing one in this run are committed (one transaction per migration); the failing one was rolled back and nothing after it ran. SELECT name FROM pgmigrations shows exactly what applied." >&2
   fail "migrator invocation failed (FunctionError=${FUNCTION_ERROR}) - see payload above. deploy.sh must not run."
+fi
+
+# The handler returns {"migrations":[<names applied>]} for "up" (src/
+# migrator.js). node-pg-migrate's own "No migrations to run!" goes to the
+# function's CloudWatch log, not this payload, so say it here too.
+# Informational only - the run already succeeded, so an odd payload must not
+# turn it red.
+APPLIED="$(jq -r '(.migrations // []) | join(", ")' "$PAYLOAD_FILE" 2>/dev/null ||
+  echo "<unparseable payload - see above>")"
+if [ -z "$APPLIED" ]; then
+  log "No migrations to run - schema already current"
+else
+  log "Applied: ${APPLIED}"
 fi
 
 log "Migration succeeded"
