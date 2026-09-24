@@ -1138,7 +1138,10 @@ What "done" means for Dejavu as a whole, not just Phase 7.
 Each one is either done or listed under a **"Known limitations"** heading in
 `README.md`, with one line on why:
 - [ ] Playwright E2E (Phase 4)
-- [ ] `idempotencyKey` from the frontend (Phase 3 / 7.0)
+- [x] `idempotencyKey` from the frontend (Phase 3 / 7.0). **Done:**
+      `dejavu/src/lib/checkoutAttempt.js` keeps one key per checkout attempt,
+      `Cart.jsx` sends it, and `dejavu/tests/checkoutAttempt.test.js` covers
+      the reuse and rotation rules.
 - [ ] Least-privilege `dejavu_app` DB role (D8, Phase 6)
 - [x] Retry once on `28P01` (6.10). **Done** (issue #22, second pass; 7.4).
       It was first deferred because `smoke.sh`'s retries already absorb one
@@ -1166,6 +1169,12 @@ Each one is either done or listed under a **"Known limitations"** heading in
       the deploy/rollback story with 7.10's numbers, cost, and Known
       limitations. Link the execution plan and the `phase-*-steps.md` files
       for depth.
+      **First pass done 2026-09-24 (issue #38)**, with everything except
+      7.10's numbers. After the drill, add its exposure window and 5xx count
+      to the README's "How a change ships", and update "Where things stand".
+      The same pass found one new known limitation, now listed in the README:
+      the storefront has no UI for `POST /api/user/orders/claim`, which 7.9's
+      click-through ("claim the order") assumes.
 
 ### Leave the account in a known state
 

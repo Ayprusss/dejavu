@@ -131,7 +131,7 @@ are a frontend contract — `backend/tests/fixtures/apiShapes.js` records them.
 - **Order** — `id`, `stripeSessionId`, `userId` (nullable for guests), `customerEmail`, `totalAmount`, `status`, `shippingAddress`
 - **OrderItem** — `id`, `orderId`, `variantId`, `quantity`, `priceAtSale`
 
-On registration, `authController` links any prior guest `Order` rows that match the new user's email by setting `userId`.
+Registration does **not** touch guest `Order` rows. They stay unowned until claimed with their `stripeSessionId` (see "Guest orders" below).
 
 ### Checkout & Webhook flow
 

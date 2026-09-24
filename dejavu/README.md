@@ -1,55 +1,76 @@
-# Dejavu Webstore
+# Dejavu — Storefront
 
-Dejavu is a full-stack e-commerce web application designed to provide a premium, modern shopping experience. It features dynamic product showcasing, interactive lookbooks, secure checkout processing, and comprehensive user account management.
+The React single-page app for the Dejavu storefront. It covers product
+browsing, editorial lookbooks, a slide-out cart, Stripe Checkout, and user
+and admin accounts. It talks to the Express API in [`../backend`](../backend)
+over REST.
 
-## 🚀 Tech Stack
+## Tech stack
 
-- **Frontend:** React.js, Vite, React Router, custom CSS for responsive design.
-- **Backend Infrastructure:** Node.js/Express (hosted on Render), Vercel (Frontend hosting).
-- **Database:** Supabase for user accounts, product inventory, and order records.
-- **Payments:** Stripe Checkout & Webhooks.
-- **Email Services:** EmailJS for contact form submissions.
+- **React 19** + **Vite**, **React Router v7**.
+- **Plain CSS**, with no UI framework.
+- **No state library.** All global state lives in `App.jsx` (cart items, cart
+  open/close, account panel) and is passed down as props.
+- **EmailJS** for the contact form.
+- **Vitest** for unit tests.
+- **Hosting:** Vercel, with [`vercel.json`](vercel.json) rewriting every path
+  to `index.html`. [`Dockerfile`](Dockerfile) and [`nginx.conf`](nginx.conf)
+  serve the same build in a container for `docker compose`.
 
-## ✨ Features
+## Routes
 
-### E-Commerce & Shopping
+| Path                                    | Page                                                                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `/entry`                                | Landing page. `/` and unknown paths redirect here.                                                                                    |
+| `/pages/shop`                           | Product grid from `GET /api/products`. `/shop` redirects here.                                                                        |
+| `/products/:productId`                  | Product detail with size and stock (`:productId` is the Stripe product id)                                                            |
+| `/collections`                          | Editorial lookbooks, from `src/data/collectionsData.json` and `collectionsMeta.js`                                                    |
+| `/index`                                | Scroll-anchored brand index                                                                                                           |
+| `/about`, `/contact`                    | About; contact form (EmailJS)                                                                                                         |
+| `/checkout/success`, `/checkout/cancel` | Stripe Checkout return pages. The success page polls `GET /api/checkout/session/:sessionId` until the webhook has recorded the order. |
+| `/account/*`                            | Sign in or register, order history                                                                                                    |
+| `/admin/*`                              | Admin dashboard: products, stock, orders. Needs an admin JWT.                                                                         |
 
-- **Dynamic Shop Directory:** A fully functional shop interface (`/shop`) to explore products.
-- **Product Details:** Individual product pages (`/products/:id`) handling variant selections, sizing, and stock verification.
-- **Slide-out Cart:** A responsive shopping cart component allowing users to review items, adjust quantities, and remove items dynamically.
-- **Stripe Checkout:** Secure payment sessions via Stripe, with webhook integrations that guarantee order fulfillment, record creation in Supabase, and automatic inventory deduction.
+Lookbook images are static assets under `public/Collections/<id>/`.
 
-### User Accounts & Authentication
+## Configuration
 
-- **User Profiles:** Secure registration and login flows.
-- **Order History & Guest Bridging:** Users can log in to view past orders. The system can connect past guest-checkout orders to newly created user profiles based on email addresses.
-- **Admin Dashboard:** A secured, consolidated admin interface that seamlessly integrates into the account section for users with administrative privileges, enabling store management.
+| Variable       | Default                 | Notes                                                                                                                                 |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_API_URL` | `http://localhost:5000` | Backend origin. Read only in [`src/config/api.js`](src/config/api.js); import `API_URL` from there rather than hard-coding an origin. |
 
-### Brand Experience & Navigational Interfaces
+`VITE_API_URL` is inlined **at build time**, so each environment (local, dev,
+prod) is a separate build, not one build with runtime config.
 
-- **Visual Lookbooks:** `Collections` and `Index` pages featuring dynamic, immersive photography displays, including scroll-anchored image navigation to highlight seasonal releases.
-- **Stockists Directory:** Integrated stockist links to showcase global retail partners.
-- **Legal & Information:** Built-in modal dialogs for Shipping policies and Terms of Service.
+## Local development
 
-### Interactive Components
+Start the API first; see [`../backend/README.md`](../backend/README.md). Then:
 
-- **Contact Form:** Integrated with EmailJS, enabling direct and identifiable inquiries straight from the application front-end.
-- **Global Navigation:** A fixed, responsive Navbar and Footer architecture for seamless routing across the webstore.
+```bash
+npm ci
+npm run dev        # http://localhost:5173
+```
 
-## 🛠️ Local Development Setup
+| Command                | Description                                                               |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `npm run dev`          | Vite dev server                                                           |
+| `npm run build`        | Production build to `dist/`                                               |
+| `npm run preview`      | Serve the production build                                                |
+| `npm test`             | Unit tests (`tests/`: cart arithmetic, checkout-attempt idempotency keys) |
+| `npm run lint`         | ESLint                                                                    |
+| `npm run format:check` | Prettier check                                                            |
 
-To run the frontend locally:
+## Checkout
 
-1. Clone the repository.
-2. Ensure you have Node.js installed.
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Start the Vite development server:
-   ```bash
-   npm run dev
-   ```
-5. Navigate to `http://localhost:5173` (or the port specified by Vite) in your browser.
+1. The cart sends `[{ variantId, quantity }]` to `POST /api/checkout`, along
+   with an `idempotencyKey` from [`src/lib/checkoutAttempt.js`](src/lib/checkoutAttempt.js).
+   The key stays stable across retries of one attempt, so a double click
+   doesn't create two Stripe sessions.
+2. The browser is redirected to Stripe Checkout.
+3. The order is recorded server-side, from Stripe's webhook, never from the
+   browser.
 
-_Note: For full e-commerce functionality, ensure that the appropriate environment variables for Supabase, Stripe, and your backend API URL are configured._
+Guest orders aren't linked by email when someone registers. The API claims
+them explicitly instead, with `POST /api/user/orders/claim` and the
+checkout's session id. **The storefront doesn't call that endpoint yet**, so
+there's no UI for claiming a guest order.
