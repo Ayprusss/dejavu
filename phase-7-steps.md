@@ -653,6 +653,31 @@ runbook stage 6 (dev) and stage 10 (the drill).
       saved plan file instead of re-planning inline. Assumes the deploy role
       (not the apply role) for the republish step only, since the apply role
       has no `UpdateFunctionCode`/`PublishVersion`/`UpdateAlias` (7.3).
+    - **Fixed after the PR #28 merge (issue #12).** That merge's `apply-dev`
+      (run `35820019759`) planned `15 to add, 2 to change, 2 to destroy`,
+      skipped `terraform apply` and all three republish steps, and still went
+      green. The cause was `hashicorp/setup-terraform@v3`'s default
+      `terraform_wrapper: true`. The wrapper (`wrapper/terraform.js` at
+      v3.1.2) replaces `terraform` on `PATH` with a Node script. That script
+      runs the real binary with `ignoreReturnCode`, calls
+      `core.setOutput('exitcode', '2')`, and then *returns* for 0 or 2, so the
+      process exits **0**. The step's `$?` was therefore 0, and its
+      `echo "exitcode=$code"` appended `exitcode=0` after the wrapper's own
+      `exitcode` output in the same `$GITHUB_OUTPUT`. The later value wins,
+      so `steps.plan.outputs.exitcode` read `0` and every `== '2'` gate
+      skipped. The fix sets `terraform_wrapper: false` on every
+      setup-terraform step in `terraform.yml`. Nothing reads the wrapper's
+      `stdout`/`stderr`/`exitcode` outputs. The PR `plan` job redirects to
+      `plan.txt`, and without `-detailed-exitcode` its `!= '0'` check was
+      never wrong, but it is off there too, so nothing in the file silently
+      turns exit 2 into 0. The action is now pinned by SHA (`b9cd54a`,
+      v3.1.2). Both apply plans also fail loudly now: any exit code other
+      than 0/2 fails the step. The code must also agree with
+      `terraform show -json tfplan | jq .applyable`, the flag
+      `-detailed-exitcode` derives 2 from (`internal/backend/local/backend_plan.go`,
+      `PlanEmpty = !plan.Applyable`), or the step fails instead of guessing.
+      Code done, not yet verified live. The first real apply lands the 15/2/2
+      (the stage 4 alias move and URL replacement).
 - [x] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
       (unchanged). Only code auto-promotes, never infrastructure.
 - [x] **Every `deploy.yml` run is `main`'s copy** (issue #21). This is a
@@ -680,10 +705,16 @@ runbook stage 6 (dev) and stage 10 (the drill).
       it points at), with a `# vX.Y.Z` comment. `terraform.yml`'s own action
       refs were left as version tags, matching that file's existing
       convention — the pin-by-SHA requirement in the plan is scoped to
-      `deploy.yml`.
+      `deploy.yml`. The exception is `hashicorp/setup-terraform`, pinned to
+      `b9cd54a` (`v3.1.2`) when the wrapper fix above touched it. The other
+      actions in `terraform.yml` still use tags, although its apply jobs
+      also hold credentials.
 - [x] `actionlint` clean (via Docker, as in 6.4). Ran
       `docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color`
       against the whole `.github/workflows/` directory — no findings.
+      Re-run after the wrapper fix with the actionlint 1.7.12 release binary
+      plus shellcheck (Docker's daemon wasn't running): 0 errors across all
+      four workflows.
 - [x] **Why the manual gate, when everything is automated?** Write the answer
       in the workflow comment, because the roadmap asks it. The smoke test
       only catches what it checks. The gate is where a human looks at dev
