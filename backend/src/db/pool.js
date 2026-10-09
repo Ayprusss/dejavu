@@ -56,22 +56,61 @@ pool.on('error', (error) => {
  * connected and then failed while idle — not for a brand-new connection
  * attempt that fails at auth time, which is the actual rotation scenario
  * (the pool opens a fresh connection and the cached password is stale). That
- * error rejects the caller's own `query`/`connect` promise instead, so it has
- * to be caught here, at the one place both paths go through.
+ * error comes back from connection acquisition instead, so it is caught here,
+ * around `pool.connect`, the one place both paths go through: pg-pool's own
+ * `pool.query` acquires its client via `this.connect(cb)`, which is this
+ * wrapper.
+ *
+ * After invalidating, the *connection* is retried once (issue #22). 28P01 is
+ * raised during the startup/auth handshake of a new physical connection,
+ * before any statement is sent, so retrying acquisition can never run a
+ * statement twice. No client has been handed out yet either, so there is no
+ * caller transaction to be inside. The retry re-fetches the password (the
+ * cache was just cleared), which turns 6.10 run 2's stale-cache blip into one
+ * slower request instead of a 5xx. Exactly once: if the re-fetched secret is
+ * still the old one (rotation in progress, `AWSCURRENT` not yet moved), the
+ * second 28P01 goes to the caller as before.
+ *
+ * Deliberately not wrapped: `pool.query` or `client.query`, where an error can
+ * arrive after the statement executed. Only acquisition is retried.
  */
-const invalidateOn28P01 = (methodName) => {
-  const original = pool[methodName].bind(pool);
-  pool[methodName] = async (...args) => {
-    try {
-      return await original(...args);
-    } catch (error) {
-      if (error.code === '28P01') invalidate();
-      throw error;
-    }
-  };
-};
+const originalConnect = pool.connect.bind(pool);
 
-invalidateOn28P01('query');
-invalidateOn28P01('connect');
+const logAuthRetry = () =>
+  logger.warn(
+    { event: 'db.auth_retry' },
+    'Database auth failed (28P01); retrying the connection once with a re-fetched password',
+  );
+
+pool.connect = (callback) => {
+  // Callback style: pg-pool's `pool.query` calls `this.connect(cb)` and gets
+  // `(err, client, release)` back. Forward whatever the pool hands over.
+  if (typeof callback === 'function') {
+    let retried = false;
+    const onConnect = (error, ...rest) => {
+      if (error?.code === '28P01') {
+        invalidate();
+        if (!retried) {
+          retried = true;
+          logAuthRetry();
+          return originalConnect(onConnect);
+        }
+      }
+      return callback(error, ...rest);
+    };
+    return originalConnect(onConnect);
+  }
+
+  // Promise style: `withTransaction`, and anything else awaiting a client.
+  return originalConnect().catch((error) => {
+    if (error.code !== '28P01') throw error;
+    invalidate();
+    logAuthRetry();
+    return originalConnect().catch((retryError) => {
+      if (retryError.code === '28P01') invalidate();
+      throw retryError;
+    });
+  });
+};
 
 module.exports = pool;

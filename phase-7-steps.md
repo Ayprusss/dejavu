@@ -47,9 +47,19 @@ them before Phase 7 builds on top of them.
       configuration.` 6.13's "if it isn't, find out why" doesn't apply. CI on
       `main` is green, so `push-image` has pushed `ba7fa35`-era images to
       both ECR repos. Confirm with `aws ecr describe-images`.
-- [ ] **48 h Cost Explorer re-check** (6.12). Fix the Phase 6 cost table with
+- [x] **48 h Cost Explorer re-check** (6.12). Fix the Phase 6 cost table with
       real numbers. Prod's cost decision in 7.1 depends on it, so do this
       one first.
+      Done 2026-09-23 (issue #23), as a six-day sample: dev has run since
+      the 6.12 re-create (RDS `InstanceCreateTime` 2026-09-17T00:22Z). Cost
+      Explorer, 2026-09-01 to 2026-09-23 by service: every line $0 (or a
+      ~1e-8 rounding artifact), total ≈ −$0.00000012. RDS, EC2 (NAT) and
+      public-IPv4 hours are all $0 under the free tier with one environment
+      up. Credits remaining **$174.32** (up from 6.12's $159.59); the plan
+      expires **2027-03-10T22:53:06Z**. That supports D5 but doesn't carry
+      over to two environments: see [Cost](#cost). Recorded in
+      `phase-6-steps.md` (6.12 and Cost) and the execution plan's cost
+      table.
 - [ ] **Trim the dev apply role with IAM Access Analyzer policy generation**
       (6.5, still unchecked). Record the before and after sizes. Optional, but
       7.3 adds another role, so this is the last cheap chance to learn what
@@ -72,8 +82,16 @@ them before Phase 7 builds on top of them.
       network error with the cart unchanged), a fresh key once the cart's
       signature changes or once a checkout redirects to Stripe. Covered by
       `dejavu/tests/checkoutAttempt.test.js`.
-- [ ] Execution plan's Verification table: rows 3 and 4 were never marked
+- [x] Execution plan's Verification table: rows 3 and 4 were never marked
       `[x]`, though both phases are done. Fix that in 7.11.
+      Done (issue #25), but only row 3 is a tick. Row 3 is ticked with its
+      evidence named, Phase 4's replay tests plus 6.8's duplicate delivery
+      against the real Function URL, because the local `stripe listen`
+      drill it describes was never run. Row 4 is **reworded, not ticked**:
+      it asked for a Playwright trace, and Playwright was deferred, so
+      ticking it as written would claim something that doesn't exist. It
+      now describes the 53 mutation-verified integration tests and is
+      re-checked in 7.12.
 
 ---
 
@@ -403,7 +421,10 @@ sequence of stages.
       the migrator calls it (single transaction for the whole run, or one per
       migration?). A failure halfway through a multi-migration deploy should
       leave the schema at a known point, and the runbook has to say which.
-      **Confirmed from `backend/node_modules/node-pg-migrate/dist/legacy/{runner,migration,migrationBuilder}.js`:**
+      **Confirmed from `backend/node_modules/node-pg-migrate/dist/legacy/{runner,migration,migrationBuilder}.js`**
+      (re-checked in the #11 audit against `dist/bundle/index.js`, which is
+      what `import('node-pg-migrate')` actually resolves to under 9.0.0's
+      `exports` map - same logic):
       `runner()` only wraps the whole batch in one `BEGIN`/`COMMIT` when
       `options.singleTransaction` is truthy; `backend/src/migrator.js`'s
       `up()` never sets it, so it's `undefined` (falsy) - despite the
@@ -415,8 +436,17 @@ sequence of stages.
       halfway through a multi-migration deploy leaves every earlier migration
       in that run committed and the failing one rolled back - the schema
       lands exactly at "all migrations before the failing one," never
-      partially applied. `backend/MIGRATIONS.md` (7.6) should state this
-      plainly for the runbook.
+      partially applied. (A failing statement doesn't get an explicit
+      `ROLLBACK` from `_apply`; the runner's `finally` closes the connection,
+      which ends the open transaction the same way.) `migrate.sh` prints this
+      on every `FunctionError`, so it's in the job log at the moment it
+      matters; `backend/MIGRATIONS.md` (7.6) and the runbook's drill stage
+      should state it plainly too - **still open, outside 7.4's files**.
+      Related, found in the same audit: the migrator doesn't set
+      `advisoryLockMode`, so it's the default `"fail"` - a concurrent second
+      `up` throws "Another migration is already running" at once rather than
+      waiting (`migrate.sh`'s comment now says so; `src/migrator.js`'s JSDoc
+      on `up()` still says "waits").
 
 ### `deploy.sh <env> <sha>`
 
@@ -454,8 +484,11 @@ sequence of stages.
       deleting Lambda versions.
 - [x] Write the outcome to `$GITHUB_STEP_SUMMARY`: env, SHA, image digest, old
       version → new version, smoke timings, and whether it rolled back.
-      (Smoke *timings* live in `smoke.sh`'s own stdout, captured in the job
-      log rather than duplicated into the summary table.)
+      (The summary's `Smoke` row has each run's wall-clock time and result -
+      the new version's, and the rollback's re-smoke if there was one; the
+      per-request breakdown stays in `smoke.sh`'s own lines in the job log.
+      The row was missing until the #11 audit; the harness now asserts
+      every field.)
 
 ### `smoke.sh <url> <sha>`
 
@@ -469,6 +502,10 @@ The plan says under ~10 s, and exactly three checks.
       total budget**. The first request after a shift is a cold start (p50
       ≈1.16 s, max seen 1.54 s in 6.9), so a single try with a 1 s timeout
       would flake. A flaky smoke test is a random rollback.
+      (The budget was only checked *between* attempts until the #11 audit,
+      so a run could overshoot by one request's 4 s. Each request's `-m` is
+      now clamped to whatever is left of the 15 s; the harness proves it by
+      starting smoke's `SECONDS` stopwatch at 12 and at 15.)
 - [x] Not `/api/ready`: it duplicates `/api/products`'s DB check with less
       signal. Not checkout: it creates Stripe objects on every run. Write down
       why each is excluded. The roadmap asks "why not more?" (Both reasons
@@ -498,6 +535,30 @@ The plan says under ~10 s, and exactly three checks.
       `phase-7-runbook.md` stages 6 and 10 check `NextRotationDate`. A
       rollback inside a rotation window is suspect until the log is checked
       for `28P01`.
+- [x] **Then the backend retry-once was promoted too** (issue #22, second
+      pass; see 7.12). The reason to do it anyway, although smoke already
+      coped: the stale-cache case is the *common* one (6.10 run 2), and
+      retrying there is always safe. A `28P01` is raised in the auth
+      handshake of a new physical connection, before any statement is sent.
+      So `pool.js` now retries **the connection, not the call**: it wraps
+      `pool.connect` only, in both styles, and calls `invalidate()` before
+      the second attempt so it re-fetches the password. pg-pool's
+      `pool.query` acquires through `this.connect(cb)`, so it gets the same
+      retry. It retries exactly once, only on `28P01`, and never around a
+      `pool.query`/`client.query`, where an error can arrive after the
+      statement ran. Each retry logs `db.auth_retry`. Result: a stale-cache
+      blip is one slower request (≈277 ms in 6.10, for the Secrets Manager
+      re-fetch plus TLS), not a 500. It doesn't cost a smoke attempt, and it
+      puts no stray 5xx into `Url5xxCount` or the 5xx alarm. What stays the
+      same: smoke's retries are the backstop, and the mid-rotation window
+      above is still covered only by timing. A second `28P01` there goes to
+      the caller as before.
+      Unit-tested without a database (`backend/tests/dbPool.test.js`: 8
+      cases, stubbing only pg-pool's `connect` and driving the real
+      `pool.query`). Verified by breaking it: against `main`'s `pool.js`,
+      4 of the 8 go red (every retry case). An unbounded retry reddens "exactly
+      once". A query-level retry layered on top reddens "exactly once" and
+      "never re-issues a statement".
 
 ### `promote-check.sh <sha>`
 
@@ -523,6 +584,32 @@ rollback image → refuse; `publish-version` returning an existing version
 issue #22 rotation-blip cases under `smoke.sh` above.) Mutation-tested by
 temporarily disabling `migrate.sh`'s `FunctionError` check (`if false && ...`)
 and confirming the harness caught it (red), then reverting (green again).
+
+**#11 audit** (every box above checked against the code one by one). Three
+boxes were ticked on behaviour nothing tested, and two didn't fully match
+their own text. Now **70/70**. The fake `aws` logs every call (with the
+`AWS_MAX_ATTEMPTS` it saw), and the fake `curl` logs each `-m`, so the
+harness asserts on what the scripts *sent* as well as the state they left:
+
+- `migrate.sh` happy path: `--image-uri dejavu-migrator:<sha>`, update →
+  `wait function-updated-v2` → invoke in that order, `AWS_MAX_ATTEMPTS=1`,
+  `--cli-read-timeout 310`, `{"action":"up"}`, payload printed on success.
+  It now also names the applied migrations, or says "No migrations to run".
+  That line used to exist only in CloudWatch, though the runbook's stage 6
+  expects it in `migrate.sh`'s output.
+- The job summary: every field, including the new `Smoke` row and the
+  exit-2 "page a human".
+- Prune: newest 10 kept, older deleted; an alias target older than the
+  newest 10 survives (rollback onto version 1); nothing deleted on exit 2.
+- The smoke budget is hard (above).
+
+Each new check was mutation-tested: removing the `-m` clamp, the `Smoke` row,
+`AWS_MAX_ATTEMPTS=1`, `--cli-read-timeout 310`, the schema-state message, the
+"No migrations to run" line, prune's alias-target exemption or its exit-2
+skip, or raising `KEEP_COUNT`, each turns the harness red. **Unverified
+live:** the harness can't show real AWS output shapes, the real
+`function-updated-v2` waiter, or a real publish-version no-op. Those need
+runbook stage 6 (dev) and stage 10 (the drill).
 
 ---
 
@@ -568,6 +655,22 @@ and confirming the harness caught it (red), then reverting (green again).
       has no `UpdateFunctionCode`/`PublishVersion`/`UpdateAlias` (7.3).
 - [x] **Prod's `terraform.yml` apply is still `workflow_dispatch`-only**
       (unchanged). Only code auto-promotes, never infrastructure.
+- [x] **Every `deploy.yml` run is `main`'s copy** (issue #21). This is a
+      property of the design, not a gap:
+    - `workflow_dispatch` only works for a workflow that is on the default
+      branch. `deploy.yml` couldn't be dispatched at all until PR #28
+      (`61b9ee6`) merged it, and `gh workflow list` showed only CI,
+      gitleaks and Terraform until then. `workflow_run` also runs the
+      default branch's copy, so a change to `deploy.yml` first runs on the
+      merge that carries it, never on its PR. So the pre-merge pipeline
+      check (runbook stage 6) runs `migrate.sh` and `deploy.sh` locally with
+      admin credentials, and the first `deploy.yml` run is the merge's
+      `workflow_run` (stage 7).
+    - The `production` environment's deployment branch policy is custom and
+      lists only `main`, so every prod job runs on `main`. A promotion is
+      already `main`'s `workflow_run`. 7.10's drill and a prod
+      `terraform.yml` apply are dispatched from `main`. A drill's SHA goes
+      in the `sha` input, never in `--ref`. `dev` has no branch policy.
 - [x] Pin every third-party action in `deploy.yml` by commit SHA (6.4 started
       this with Trivy; the deploy path is where it matters most, because these
       jobs hold prod credentials). `actions/checkout` and
@@ -968,6 +1071,12 @@ variable to the shipped code. A kill switch in prod code is its own bug.
       and 4 of the Verification table (7.0); add **"What Phase 7 actually
       turned up"**, keeping only the corrections that bit; and update the
       cost table for two environments.
+      Partly done (issues #23, #25): the Phase 7 section is rewritten
+      against D1–D10 and the corrections, "What Phase 7 actually turned up"
+      covers what's been found so far, rows 3 and 4 are fixed (see 7.0),
+      and the cost table covers both environments with the measured
+      numbers. Still open: marking Phase 7 and batch H `[x]`, which waits
+      for 7.10, and adding the drill's numbers to "turned up".
 - [ ] "What I'd do differently" for Phase 7. Candidates, keep the ones that
       turned out true: CodeDeploy canary once there's traffic to measure
       (D2); a pre-shift smoke against a candidate alias (D3); a stable
@@ -1029,16 +1138,22 @@ What "done" means for Dejavu as a whole, not just Phase 7.
 Each one is either done or listed under a **"Known limitations"** heading in
 `README.md`, with one line on why:
 - [ ] Playwright E2E (Phase 4)
-- [ ] `idempotencyKey` from the frontend (Phase 3 / 7.0)
+- [x] `idempotencyKey` from the frontend (Phase 3 / 7.0). **Done:**
+      `dejavu/src/lib/checkoutAttempt.js` keeps one key per checkout attempt,
+      `Cart.jsx` sends it, and `dejavu/tests/checkoutAttempt.test.js` covers
+      the reuse and rotation rules.
 - [ ] Least-privilege `dejavu_app` DB role (D8, Phase 6)
-- [ ] Retry once on `28P01` (6.10). **Still deferred, now on purpose**
-      (issue #22). The deploy-safety concern is covered: `smoke.sh`'s
-      retries absorb one blip, and the harness proves it (7.4). What's left
-      is a user-facing improvement, namely one invisible failed request per
-      warm environment per week. It isn't a correctness fix, and it doesn't
-      cover the mid-rotation window either (7.4). For "Known limitations",
-      one line: "a weekly secret rotation can cost one failed request per
-      warm Lambda environment."
+- [x] Retry once on `28P01` (6.10). **Done** (issue #22, second pass; 7.4).
+      It was first deferred because `smoke.sh`'s retries already absorb one
+      blip. It was then promoted because retrying the *connection* is always
+      safe (28P01 comes before any statement) and the change is small.
+      `pool.js` wraps `pool.connect` only, which `pool.query` goes through,
+      and `backend/tests/dbPool.test.js` covers it. The
+      stale-cache blip is now one slower request instead of a failed one.
+      What remains for "Known limitations", in one line: "a request that
+      lands while a secret rotation is still in progress (RDS has the new
+      password, the secret doesn't yet) can still fail; the retry re-fetches
+      the same old password."
 - [ ] Shared rate-limit store or WAF (6.9)
 - [ ] User-enumeration timing on login (6.9: 401 before bcrypt when the email
       doesn't exist)
@@ -1054,6 +1169,12 @@ Each one is either done or listed under a **"Known limitations"** heading in
       the deploy/rollback story with 7.10's numbers, cost, and Known
       limitations. Link the execution plan and the `phase-*-steps.md` files
       for depth.
+      **First pass done 2026-09-24 (issue #38)**, with everything except
+      7.10's numbers. After the drill, add its exposure window and 5xx count
+      to the README's "How a change ships", and update "Where things stand".
+      The same pass found one new known limitation, now listed in the README:
+      the storefront has no UI for `POST /api/user/orders/claim`, which 7.9's
+      click-through ("claim the order") assumes.
 
 ### Leave the account in a known state
 
@@ -1120,9 +1241,12 @@ Cost Explorer numbers and correct them.
 **On this account (Free plan):** the free tier covers **one** `db.t4g.micro`
 for 750 h a month. Two RDS instances around the clock is 1,440 h, and the
 NAT and public-IPv4 hours double too, so with prod up the extra hours draw
-down the remaining credits ($159.59 at 6.12) rather than billing $0. At ~$25
-extra a month that's months of runway, not days. But it's no longer the "$0
-actually paid" story, and the budgets (7.8) should reflect it.
+down the remaining credits ($174.32 on 2026-09-23, measured in 7.0) rather
+than billing $0. At ~$25 extra a month that's about seven months of credit,
+but the Free plan itself expires on **2027-03-10**, about five and a half
+months out, so the expiry is the limit, not the balance. After that the
+list prices above are the bill. It isn't the "$0 actually paid" story any
+more, and the budgets (7.8) should reflect it.
 
 **D5's resting state:** both environments destroyed, with bootstrap, ECR and
 SSM kept, **and prod's final snapshot deleted**: ~$0.20/month. Keeping that
