@@ -1,0 +1,88 @@
+.order-receipt {
+  border-top: 1px solid #000;
+  font-size: 13px;
+}
+
+.order-receipt-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.order-receipt-item-image {
+  width: 48px;
+  height: 64px;
+  flex: none;
+  object-fit: cover;
+  background: #f6f6f6;
+}
+
+.order-receipt-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.order-receipt-item-name {
+  margin: 0 0 4px;
+  line-height: 1.35;
+}
+
+.order-receipt-item-meta {
+  font-size: 12px;
+  color: #767676;
+  margin: 0;
+}
+
+.order-receipt-item-price {
+  white-space: nowrap;
+}
+
+.order-receipt-totals {
+  margin: 0;
+  padding: 8px 0 0;
+}
+
+.order-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0;
+}
+
+.order-receipt-row dt,
+.order-receipt-row dd {
+  margin: 0;
+}
+
+.order-receipt-row--total {
+  margin-top: 8px;
+  padding: 12px 0;
+  border-top: 1px solid #000;
+}
+
+.order-receipt-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px 32px;
+  padding: 14px 0 0;
+  border-top: 1px solid #e2e2e2;
+}
+
+.order-receipt-heading {
+  font-size: 12px;
+  margin: 0 0 4px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.order-receipt-line {
+  line-height: 1.5;
+  margin: 0;
+}
+
+.order-receipt-card {
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}

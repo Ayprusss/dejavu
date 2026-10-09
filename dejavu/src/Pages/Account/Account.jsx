@@ -1,142 +1,96 @@
 import { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { API_URL } from '../../config/api';
+import { readSession } from '../../lib/session';
+import AccountDashboard from './AccountDashboard';
+import AccountOrders from './AccountOrders';
+import AccountOrderDetail from './AccountOrderDetail';
 import './Account.css';
 
+const TABS = [
+  { label: 'Dashboard', to: '/account', end: true },
+  { label: 'Orders', to: '/account/orders', end: false },
+];
+
 function Account() {
-  const [token, setToken] = useState(null);
-  const [user, setUser] = useState(null);
+  const [session] = useState(readSession);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+
+  const token = session?.token;
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('adminToken');
-    if (savedToken) {
-      setToken(savedToken);
-      try {
-        const payload = JSON.parse(atob(savedToken.split('.')[1]));
-        setUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch {
-        // Invalid token payload
-      }
-    }
-    setIsInitializing(false);
-  }, []);
+    if (!token) return undefined;
 
-  useEffect(() => {
-    if (!token) return;
+    let cancelled = false;
 
     const fetchOrders = async () => {
-      setLoading(true);
-      setError(null);
       try {
         const res = await fetch(`${API_URL}/api/user/orders`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) {
-          throw new Error('Failed to fetch order history');
+          throw new Error('We could not load your orders. Please try again.');
         }
         const data = await res.json();
-        setOrders(data);
+        if (!cancelled) setOrders(Array.isArray(data) ? data : []);
       } catch (err) {
-        setError(err.message);
+        if (!cancelled) setError(err.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchOrders();
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminToken');
-    window.location.href = '/entry';
-  };
-
-  if (isInitializing) return null;
-
-  if (!token) {
+  if (!session) {
     return <Navigate to="/entry" replace />;
+  }
+
+  let content;
+  if (loading) {
+    content = <p className="account-note">Loading your orders…</p>;
+  } else if (error) {
+    content = <p className="account-note account-note--error">{error}</p>;
+  } else {
+    content = (
+      <Routes>
+        <Route index element={<AccountDashboard orders={orders} />} />
+        <Route path="orders" element={<AccountOrders orders={orders} />} />
+        <Route
+          path="orders/:orderId"
+          element={<AccountOrderDetail orders={orders} />}
+        />
+        <Route path="*" element={<Navigate to="/account" replace />} />
+      </Routes>
+    );
   }
 
   return (
     <div className="account-page">
-      <header className="account-header">
-        <h1 className="account-title">My Account</h1>
-        <div style={{ display: 'flex', gap: '15px' }}>
-          {user?.isAdmin && (
-            <button
-              className="account-btn account-btn--highlight"
-              onClick={() => (window.location.href = '/admin')}
+      <div className="account-inner">
+        <h1 className="account-title">Account</h1>
+
+        <nav className="account-tabs" aria-label="Account sections">
+          {TABS.map(({ label, to, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) => `account-tab${isActive ? ' is-active' : ''}`}
             >
-              Admin Dashboard
-            </button>
-          )}
-          <button className="account-btn" onClick={handleLogout}>
-            Log Out
-          </button>
-        </div>
-      </header>
+              {label}
+            </NavLink>
+          ))}
+        </nav>
 
-      <div className="account-panel">
-        <h2 className="account-subtitle">Order History</h2>
-
-        {loading ? (
-          <p>Loading your orders...</p>
-        ) : error ? (
-          <p className="account-error">{error}</p>
-        ) : orders.length === 0 ? (
-          <p>You haven't placed any orders yet.</p>
-        ) : (
-          <div className="account-orders-list">
-            {orders.map((order) => (
-              <div key={order.id} className="account-order-card">
-                <div className="account-order-header">
-                  <div>
-                    <strong>Order #{order.id.substring(0, 8)}</strong>
-                    <div className="account-order-date">
-                      {new Date(order.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="account-order-status">
-                    <div>{order.status}</div>
-                    <strong>${order.totalAmount.toFixed(2)}</strong>
-                  </div>
-                </div>
-
-                <table className="account-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Size</th>
-                      <th>Qty</th>
-                      <th>Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {order.OrderItem?.map((item) => {
-                      // Safety checks for the nested order payload
-                      const product = item.ProductVariant?.Product;
-                      const size = item.ProductVariant?.size || 'N/A';
-                      const name = product ? product.name : 'Unknown Product';
-
-                      return (
-                        <tr key={item.id}>
-                          <td>{name}</td>
-                          <td>{size}</td>
-                          <td>{item.quantity}</td>
-                          <td>${Number(item.priceAtSale).toFixed(2)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-          </div>
-        )}
+        {content}
       </div>
     </div>
   );

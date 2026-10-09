@@ -1,5 +1,6 @@
-import { Fragment, useState, useEffect } from 'react';
+import { useState } from 'react';
 import { API_URL } from '../../config/api';
+import { TOKEN_KEY, clearSession, readSession } from '../../lib/session';
 import { INDEX_IMAGES } from '../../data/indexData';
 import './Navbar.css';
 
@@ -16,11 +17,13 @@ const NAV_LINKS = [
 function Navbar({
   currentPage = 'entry',
   isAccountOpen = false,
+  activeAccountTab = null,
   stockistLinks = [],
   collectionsLinks = [],
   activeCollectionId = null,
   activeIndexId = null,
   onNavigate,
+  onLogout,
   cartItemCount = 0,
   onOpenCart,
 }) {
@@ -39,19 +42,7 @@ function Navbar({
   const [registerSuccessMsg, setRegisterSuccessMsg] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
-  const [loggedInUser, setLoggedInUser] = useState(null);
-
-  useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setLoggedInUser({ id: payload.id, isAdmin: payload.isAdmin });
-      } catch {
-        /* malformed token — treat as logged out */
-      }
-    }
-  }, []);
+  const [loggedInUser, setLoggedInUser] = useState(readSession);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -67,7 +58,7 @@ function Navbar({
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Login failed');
 
-      localStorage.setItem('adminToken', data.token);
+      localStorage.setItem(TOKEN_KEY, data.token);
       setLoggedInUser(data.user);
       setEmail('');
       setPassword('');
@@ -98,7 +89,7 @@ function Navbar({
 
       // Auto-login after brief delay so user can see the success message
       setTimeout(() => {
-        localStorage.setItem('adminToken', data.token);
+        localStorage.setItem(TOKEN_KEY, data.token);
         setLoggedInUser(data.user);
         setEmail('');
         setPassword('');
@@ -114,8 +105,19 @@ function Navbar({
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('adminToken');
+    clearSession();
     setLoggedInUser(null);
+    setIsMobileMenuOpen(false);
+    if (onLogout) onLogout();
+  };
+
+  const handleAccountLink = (event, page) => {
+    event.preventDefault();
+    setIsStockistExpanded(false);
+    setIsCollectionsExpanded(false);
+    setIsIndexExpanded(false);
+    setIsMobileMenuOpen(false);
+    if (onNavigate) onNavigate(page);
   };
 
   const handleNavClick = (event, page, hash = '') => {
@@ -328,32 +330,36 @@ function Navbar({
           aria-hidden={!isAccountOpen}
         >
           {loggedInUser ? (
-            <div className="account-form account-welcome">
-              <p className="account-welcome-text">Welcome back!</p>
-
-              <button
-                type="button"
-                className="account-login-button"
-                onClick={() => (window.location.href = '/account')}
+            <div className="stockist-links account-links" aria-label="Account links">
+              <a
+                className={`stockist-link-item${activeAccountTab === 'dashboard' ? ' is-active' : ''}`}
+                href="/account"
+                onClick={(event) => handleAccountLink(event, 'accountDashboard')}
               >
-                My Account
-              </button>
-
-              {loggedInUser.isAdmin && (
-                <button
-                  type="button"
-                  className="account-login-button"
-                  onClick={(e) => handleNavClick(e, 'admin')}
+                Dashboard
+              </a>
+              <a
+                className={`stockist-link-item${activeAccountTab === 'orders' ? ' is-active' : ''}`}
+                href="/account/orders"
+                onClick={(event) => handleAccountLink(event, 'accountOrders')}
+              >
+                Orders
+              </a>
+              {loggedInUser.isAdmin === true && (
+                <a
+                  className="stockist-link-item"
+                  href="/admin"
+                  onClick={(event) => handleAccountLink(event, 'admin')}
                 >
                   Admin Dashboard
-                </button>
+                </a>
               )}
               <button
                 type="button"
-                className="account-login-button account-login-button--ghost"
+                className="stockist-link-item account-logout-link"
                 onClick={handleLogout}
               >
-                Log Out
+                Log out
               </button>
             </div>
           ) : (

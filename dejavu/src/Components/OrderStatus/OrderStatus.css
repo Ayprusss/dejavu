@@ -1,0 +1,33 @@
+.order-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  color: #000;
+}
+
+.order-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+.order-status--purchased .order-status-dot {
+  background: #1f5fe0;
+}
+
+.order-status--shipped .order-status-dot {
+  background: #f2c200;
+}
+
+.order-status--delivered .order-status-dot {
+  background: #1e9a50;
+}
+
+.order-status--refunded .order-status-dot {
+  background: #d92b2b;
+}

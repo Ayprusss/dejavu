@@ -1,19 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { API_URL } from '../../config/api';
+import OrderReceipt from '../../Components/OrderReceipt/OrderReceipt';
+import { formatOrderNumber } from '../../lib/orders';
+import { readSession } from '../../lib/session';
 import './Checkout.css';
 
 const MAX_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
-
-function formatMoney(value) {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return null;
-  return `$${amount.toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} USD`;
-}
 
 function CheckoutSuccess() {
   const [searchParams] = useSearchParams();
@@ -33,7 +27,12 @@ function CheckoutSuccess() {
       attemptRef.current += 1;
 
       try {
-        const response = await fetch(`${API_URL}/api/checkout/session/${sessionId}`);
+        // The line items and shipping address are only returned to the
+        // order's owner, so a signed-in buyer has to identify themselves.
+        const token = readSession()?.token;
+        const response = await fetch(`${API_URL}/api/checkout/session/${sessionId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
 
         if (response.ok) {
           const data = await response.json();
@@ -69,20 +68,6 @@ function CheckoutSuccess() {
     };
   }, [sessionId]);
 
-  let shipping = null;
-  if (order?.shippingAddress) {
-    try {
-      shipping =
-        typeof order.shippingAddress === 'string'
-          ? JSON.parse(order.shippingAddress)
-          : order.shippingAddress;
-    } catch {
-      shipping = null;
-    }
-  }
-
-  const items = order?.OrderItem ?? [];
-
   return (
     <div className="checkout-page">
       <div className="checkout-inner">
@@ -100,62 +85,10 @@ function CheckoutSuccess() {
           <div className="checkout-order">
             <div className="checkout-order-row checkout-order-row--head">
               <span>Order</span>
-              <span>{order.id.substring(0, 8).toUpperCase()}</span>
+              <span>{formatOrderNumber(order.id)}</span>
             </div>
 
-            {items.map((item) => {
-              const product = item.ProductVariant?.Product;
-              const image = product?.images?.[0];
-              return (
-                <div key={item.id} className="checkout-order-item">
-                  {image ? (
-                    <img
-                      className="checkout-order-item-image"
-                      src={image}
-                      alt={product?.name ?? 'Ordered item'}
-                    />
-                  ) : null}
-                  <div className="checkout-order-item-info">
-                    <p className="checkout-order-item-name">
-                      {product?.name ?? 'Item'}
-                    </p>
-                    <p className="checkout-order-item-meta">
-                      {item.ProductVariant?.size
-                        ? `Size: ${item.ProductVariant.size}`
-                        : null}
-                      {item.ProductVariant?.size ? ' · ' : ''}
-                      Qty: {item.quantity}
-                    </p>
-                  </div>
-                  <span className="checkout-order-item-price">
-                    {formatMoney(item.priceAtSale)}
-                  </span>
-                </div>
-              );
-            })}
-
-            <div className="checkout-order-row checkout-order-row--total">
-              <span>Total</span>
-              <span>{formatMoney(order.totalAmount)}</span>
-            </div>
-
-            {shipping ? (
-              <div className="checkout-shipping">
-                <p className="checkout-shipping-heading">Ships to</p>
-                <p className="checkout-shipping-line">
-                  {[
-                    shipping.line1,
-                    shipping.line2,
-                    shipping.city,
-                    shipping.state,
-                    shipping.postal_code,
-                    shipping.country,
-                  ]
-                    .filter(Boolean)
-                    .join(', ')}
-                </p>
-              </div>
-            ) : null}
+            <OrderReceipt order={order} />
           </div>
         ) : null}
 
@@ -163,7 +96,7 @@ function CheckoutSuccess() {
           <Link to="/pages/shop" className="checkout-btn">
             Continue Shopping
           </Link>
-          <Link to="/account" className="checkout-link">
+          <Link to="/account/orders" className="checkout-link">
             View order history
           </Link>
         </div>
