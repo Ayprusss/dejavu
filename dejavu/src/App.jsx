@@ -109,12 +109,22 @@ function App() {
     about: '/about',
     contact: '/contact',
     admin: '/admin',
-    account: '/account',
+    accountDashboard: '/account',
+    accountOrders: '/account/orders',
   };
+
+  const isAccountRoute = location.pathname.startsWith('/account');
+  const activeAccountTab = !isAccountRoute
+    ? null
+    : location.pathname.startsWith('/account/orders')
+      ? 'orders'
+      : 'dashboard';
 
   const currentPage = location.pathname.startsWith('/products/')
     ? 'shop'
-    : (pathToPage[location.pathname] ?? 'entry');
+    : isAccountRoute
+      ? 'account'
+      : (pathToPage[location.pathname] ?? 'entry');
 
   const cartItemCount = useMemo(() => countCartItems(cartItems), [cartItems]);
 
@@ -148,21 +158,26 @@ function App() {
     navigate((pageToPath[page] ?? '/entry') + hash);
   };
 
-  const isAppRoute =
-    !location.pathname.startsWith('/admin') &&
-    !location.pathname.startsWith('/account');
+  const handleLogout = () => {
+    setIsAccountOpen(false);
+    if (isAccountRoute) navigate('/entry');
+  };
+
+  const isAppRoute = !location.pathname.startsWith('/admin');
 
   return (
     <div className="app-shell">
       {isAppRoute && (
         <Navbar
           currentPage={currentPage}
-          isAccountOpen={isAccountOpen}
+          isAccountOpen={isAccountOpen || isAccountRoute}
+          activeAccountTab={activeAccountTab}
           stockistLinks={STOCKIST_LINKS}
           collectionsLinks={COLLECTIONS_META}
           activeCollectionId={activeCollectionId}
           activeIndexId={activeIndexId}
           onNavigate={handleNavigate}
+          onLogout={handleLogout}
           cartItemCount={cartItemCount}
           onOpenCart={() => setIsCartOpen(true)}
         />

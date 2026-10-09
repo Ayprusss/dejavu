@@ -55,66 +55,8 @@
   padding: 12px 0;
 }
 
-.checkout-order-row--head {
-  border-bottom: 1px solid #e2e2e2;
-}
-
-.checkout-order-row--total {
-  border-top: 1px solid #000;
-}
-
-.checkout-order-item {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px 0;
-  border-bottom: 1px solid #e2e2e2;
-}
-
-.checkout-order-item-image {
-  width: 48px;
-  height: 64px;
-  object-fit: cover;
-  background: #f6f6f6;
-}
-
-.checkout-order-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.checkout-order-item-name {
-  font-size: 13px;
-  margin: 0 0 4px;
-  line-height: 1.35;
-}
-
-.checkout-order-item-meta {
-  font-size: 12px;
-  color: #767676;
-  margin: 0;
-}
-
-.checkout-order-item-price {
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.checkout-shipping {
-  padding: 14px 0 0;
-}
-
-.checkout-shipping-heading {
-  font-size: 12px;
-  margin: 0 0 4px;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.checkout-shipping-line {
-  font-size: 13px;
-  line-height: 1.5;
-  margin: 0;
+.checkout-order .order-receipt {
+  border-top-color: #e2e2e2;
 }
 
 .checkout-actions {
