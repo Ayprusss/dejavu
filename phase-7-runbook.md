@@ -30,11 +30,11 @@ Tracking issues: #7 (7.0), #9 (7.2), #10 (7.3), #11 (7.4), #12 (7.5),
 | # | Stage | Why it's in this position |
 |---|---|---|
 | 0 | Phase 6 leftovers (7.0) | Cost numbers feed the prod decision |
-| 1 | GitHub secret `ALARM_EMAIL` | Every Terraform plan fails without it |
+| 1 | GitHub secret `ALARM_EMAIL` | Without it the plan still passes, but dev's apply subscribes an empty address |
 | 1b | Ruleset on `main` requiring `ci` (issue #20) | Must be in place before stage 7's merge turns `main` into an auto-deploy trigger |
 | 2 | Bootstrap apply + 3 GitHub variables | The apply role can't create aliases or alarms, and the deploy roles don't exist, until this runs |
-| 3 | Push `phase-7-cd`, open the PR | CI on a real runner, plan comments for dev and prod |
-| 4 | Apply dev **from the branch** | Prove the alias, alarms and pipeline before merging, the way 6.7 did |
+| 3 | Push `phase-7-cd`, open the PR (**done**, PR #28) | CI on a real runner, plan comments for dev and prod |
+| 4 | Apply dev by dispatch from `main` | Prove the alias, alarms and republish before stage 6 relies on them |
 | 5 | Follow the new URL: Stripe, Vercel | The alias gives the API a new URL |
 | 6 | Verify alarms and the pipeline on dev | Metrics, filters and email routing are all still unproven |
 | 7 | Merge | First hands-off dev deploy. **Reject the prod approval** (prod doesn't exist yet) |
@@ -100,8 +100,24 @@ card `4242 4242 4242 4242` → success page → the order shows in admin.
 
 ## Stage 1 — `ALARM_EMAIL` secret
 
-`envs/dev` now requires `alarm_email` with no default, and `terraform.yml`
-passes it from this secret. Without it, the plan on the PR fails.
+`envs/dev` declares `alarm_email` with no default, and `terraform.yml`
+passes it from this secret as `TF_VAR_alarm_email`. **Without the secret,
+the plan does not fail.** GitHub expands an unset secret to an empty string,
+so the variable is *set*, to `""`. Terraform only complains about a variable
+that has no value at all, and `modules/observability`'s validation only
+rejects `null` (`!var.enable_alarms || var.alarm_email != null`), so `""`
+gets past both. PR #28 showed it: `plan (dev)` was green with
+`TF_VAR_alarm_email:` empty in the job's env, and its `15 to add` included
+`aws_sns_topic_subscription.alarms_email[0]`, endpoint hidden as sensitive.
+The push to `main` planned the same 15 and then skipped the apply.
+
+So the risk is at **apply** time, not plan time. A dev apply without the
+secret (stage 4's dispatch, or a push to `main` once that job really
+applies) asks SNS for an email subscription to an empty address. SNS should
+reject that and fail the apply partway through. Whatever was created before
+it stays in state, and the republish step never runs. If SNS ever accepted
+it, every alarm would route nowhere. Either way, a green plan comment says
+nothing about this secret. Set it before any dev apply:
 
 ```bash
 gh secret set ALARM_EMAIL --body "you@example.com"
@@ -190,7 +206,7 @@ gh pr merge --merge             # expect a refusal: required status check "ci" i
 gh pr merge --merge --admin     # expect a refusal too, since nobody can bypass
 
 gh pr close --delete-branch
-git switch phase-7-cd
+git switch main
 git branch -D chore/ruleset-canary
 ```
 
@@ -210,7 +226,7 @@ This creates `dejavu-gha-deploy-dev`, `dejavu-gha-deploy-prod` and
 metric filters, and raises prod's apply role to dev's level.
 
 ```bash
-git checkout phase-7-cd
+git switch main && git pull   # bootstrap's Phase 7 changes came in with PR #28
 cd terraform/bootstrap
 terraform init            # backend already migrated in Phase 5
 terraform plan            # expect: new roles/policies, in-place policy updates, 0 destroyed
@@ -251,6 +267,11 @@ Expected: the unqualified ARN is `explicitDeny` and the `:7` version is
 
 ## Stage 3 — Push and open the PR
 
+**Done (2026-09-23): PR #28, merged as `61b9ee6`. `phase-7-cd` has since
+been deleted,** so the commands below are a record of what ran, not
+something to re-run. The dev plan comment was `15 to add, 2 to change, 2 to
+destroy`, green without `ALARM_EMAIL` (see stage 1).
+
 ```bash
 git push -u origin phase-7-cd
 gh pr create --base main --head phase-7-cd \
@@ -261,7 +282,7 @@ gh pr create --base main --head phase-7-cd \
 What to check on the PR:
 
 - **`ci`** is green, including the new steps:
-  - `lint (backend)` runs shellcheck and the deploy-script harness (21 cases)
+  - `lint (backend)` runs shellcheck and the deploy-script harness (30 cases)
   - `migrations` runs the expand/contract guard
 - **Terraform plan comment for `dev`:**
   - adds `aws_lambda_alias.api_live`, the second permission, the SNS topic,
@@ -279,8 +300,10 @@ Expect this at least once, as in 6.7.
 
 ## Stage 4 — Apply dev from the branch (issues #9, #14)
 
-The same approach as 6.7: dispatch the apply from the branch, so the merge
-itself should be a no-op.
+6.7 dispatched its apply from the branch, so that the merge would be a
+no-op. That can't happen here: PR #28 merged before this stage ran, and
+`phase-7-cd` is gone. Dispatch from `main` instead, which has the same
+Terraform. Set `ALARM_EMAIL` first (stage 1).
 
 **Before you start, record the current URL and the live image**. The URL is
 about to change:
@@ -294,7 +317,7 @@ curl -s "${OLD_URL%/}/api/version"
 **Dispatch the apply:**
 
 ```bash
-gh workflow run terraform.yml --ref phase-7-cd -f environment=dev
+gh workflow run terraform.yml --ref main -f environment=dev
 gh run watch "$(gh run list --workflow terraform.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 ```
 
