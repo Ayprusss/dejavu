@@ -733,8 +733,11 @@ schema**. Rolling back the code doesn't roll back the schema.
       to diff against.
 - [x] Also fail if a PR **modifies** an existing migration file. CLAUDE.md
       already says never to do that, and CI can enforce it. The same script
-      also fails on a **delete** (a rename is a delete of the old name plus
-      an add of the new one, so it's caught the same way).
+      also fails on a **delete** and a **rename**. The rename case didn't
+      work at first: `git diff` detects renames by default and reports `R`,
+      which `--diff-filter=MD`/`=A` both miss, so a renamed migration passed.
+      Fixed with `--no-renames` (issue #13 audit); a rename is now a delete
+      plus an add and fails like one.
 - [ ] **Stronger, optional:** a `backward-compat` job that migrates a fresh
       database with the PR's migrations, then runs `main`'s integration suite
       against it. That's the real claim ("old code works on new schema"),
@@ -765,6 +768,17 @@ schema**. Rolling back the code doesn't roll back the schema.
       watch it pass, then delete the branch. Also verified: modifying an
       existing migration fails independently. Done on a local scratch branch,
       deleted afterward — see the 7.6 commit message for the exact output.
+      **Made repeatable** in the issue #13 audit:
+      `backend/scripts/test-check-migration-safety.sh` runs 15 cases in a
+      throwaway git repo (including the DROP COLUMN fail/contract-pass pair
+      and modify/delete/rename), and the `migrations` job runs it before the
+      guard. It found two more bugs, both fixed: a one-line `/* ... */`
+      comment in the Up section made the old `sed` range delete swallow the
+      rest of the section, so a `DROP COLUMN` after it passed; and
+      `ALTER COLUMN.*TYPE` matched across statements once the section was
+      flattened, so an `ALTER COLUMN ... SET DEFAULT` plus an unrelated
+      `CREATE TYPE` failed. Each fix was checked by reverting it and
+      watching its case fail.
 
 ---
 

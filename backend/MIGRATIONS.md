@@ -3,7 +3,7 @@
 Plain `.sql` files, split into `-- Up Migration` / `-- Down Migration`
 sections, run by `node-pg-migrate` against `DATABASE_URL`. Local, CI and RDS
 all run this same set. **Never edit an applied migration — add a new one.**
-CI enforces this (`migration-safety`, below): a PR that modifies or deletes
+CI enforces this (`migration-safety`, below): a PR that modifies, deletes or renames
 an existing `migrations/*.sql` file fails.
 
 ## The rule: expand/contract
@@ -55,7 +55,7 @@ has.
 ## CI guard: `migration-safety`
 
 The `migrations` job runs
-[`backend/scripts/check-migration-safety.sh`](../scripts/check-migration-safety.sh)
+[`backend/scripts/check-migration-safety.sh`](scripts/check-migration-safety.sh)
 against the PR's base commit (or, on a push to `main`, the commit before the
 push). It is a speed bump, not a proof — it reads the `.sql` text and never
 runs it, so it catches the accident, not the deliberate choice:
@@ -66,13 +66,19 @@ runs it, so it catches the accident, not the deliberate choice:
   somewhere in the file, or the job fails. Add the line once you've checked
   it against the rule above — usually because the column or table being
   dropped/renamed was never read by the release currently in prod.
-- Any PR that **modifies or deletes** a migration file that already existed
+- Any PR that **modifies, deletes or renames** a migration file that already existed
   on the base commit fails, full stop. There's no contract line that makes
   editing an applied migration safe; open a new one instead.
 
 Matching is case-insensitive and ignores `--`/`/* */` comments, so a comment
 that explains why a migration _doesn't_ do one of these things won't trip the
 guard, and a commented-out example won't either.
+
+The guard has its own regression cases,
+[`backend/scripts/test-check-migration-safety.sh`](scripts/test-check-migration-safety.sh),
+which the `migrations` job runs first. It builds a throwaway git repo in a
+temp dir, so it's safe to run locally too: `bash scripts/test-check-migration-safety.sh`
+from `backend/`. Add a case there whenever you change the guard.
 
 ## Stronger, optional: a backward-compat job
 

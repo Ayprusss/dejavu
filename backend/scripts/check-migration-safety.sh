@@ -14,8 +14,10 @@
 #      `-- contract:` line somewhere in the file.
 #   2. No migration file already on the base commit may be MODIFIED or
 #      DELETED - CLAUDE.md already says never to edit an applied migration,
-#      add a new one instead. A rename shows up as a delete of the old name
-#      plus an add of the new one, so it is caught here too.
+#      add a new one instead. Both diffs run with --no-renames, so a rename
+#      shows up as a delete of the old name plus an add of the new one and
+#      is caught here too (without it git reports R, which neither
+#      --diff-filter=MD nor =A matches, and a renamed file slips through).
 #
 # This is a speed bump, not a proof: it catches the accident, not the
 # deliberate choice, and it only looks at .sql text, never runs it.
@@ -41,7 +43,7 @@ status=0
 # happen to exist in the working tree right now - a deleted file wouldn't be
 # one of them, and would silently drop out of the check.
 mapfile -t changed_existing < <(
-  git diff --name-only --relative --diff-filter=MD "${base_sha}...HEAD" -- "${migrations_dir}/*.sql"
+  git diff --name-only --relative --no-renames --diff-filter=MD "${base_sha}...HEAD" -- "${migrations_dir}/*.sql"
 )
 
 if [[ ${#changed_existing[@]} -gt 0 ]]; then
@@ -52,10 +54,13 @@ fi
 
 # --- Rule 1: added migrations with a destructive Up statement need a contract line
 mapfile -t added < <(
-  git diff --name-only --relative --diff-filter=A "${base_sha}...HEAD" -- "${migrations_dir}/*.sql"
+  git diff --name-only --relative --no-renames --diff-filter=A "${base_sha}...HEAD" -- "${migrations_dir}/*.sql"
 )
 
-destructive_pattern='drop[[:space:]]+column|drop[[:space:]]+table|rename|alter[[:space:]]+column.*type|set[[:space:]]+not[[:space:]]+null'
+# `[^;]*` rather than `.*` for ALTER COLUMN ... TYPE: the Up section is
+# flattened to one line below, so `.*` would pair an innocent
+# `ALTER COLUMN "x" SET DEFAULT ...` with a `TYPE` in a later statement.
+destructive_pattern='drop[[:space:]]+column|drop[[:space:]]+table|rename|alter[[:space:]]+column[^;]*[[:space:]]type([^[:alnum:]_]|$)|set[[:space:]]+not[[:space:]]+null'
 
 for file in "${added[@]}"; do
   [[ -z "${file}" ]] && continue
@@ -67,13 +72,23 @@ for file in "${added[@]}"; do
   # the migration does NOT do it) can't trigger a false positive. Newlines
   # are flattened to spaces so a statement split across lines, like
   # `ALTER COLUMN "x"\n  TYPE text`, still matches as one phrase.
+  #
+  # Order matters: line comments go first (so a `/*` inside one can't open a
+  # block), then the text is flattened, then block comments are removed with
+  # a regex that ends each one at its own `*/`. A line-range delete
+  # (`sed '/\/\*/,/\*\//d'`) looks like it does the same but doesn't: on a
+  # one-line `/* ... */` the range never closes and swallows the rest of the
+  # section, statements included - an unclosed comment now leaves the text
+  # in place instead, which errs towards failing, not passing.
+  # scripts/test-check-migration-safety.sh covers both cases.
   up_section=$(
     awk 'BEGIN{f=0} { t=tolower($0);
       if (t ~ /^--[ \t]*up migration/) { f=1; next }
       if (t ~ /^--[ \t]*down migration/) { f=0 }
       if (f) print }' "${file}" \
-      | sed -e '/\/\*/,/\*\//d' -e 's/--.*$//' \
-      | tr '\n' ' '
+      | sed -e 's/--.*$//' \
+      | tr '\n' ' ' \
+      | sed -E -e 's:/\*([^*]|\*+[^*/])*\*+/: :g'
   )
 
   if grep -qiE "${destructive_pattern}" <<<"${up_section}"; then

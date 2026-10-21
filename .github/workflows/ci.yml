@@ -234,6 +234,13 @@ jobs:
       # zeros when there's no such commit (a brand-new ref, or the repo's
       # first commit) - there's nothing to compare against, so fall back to
       # HEAD's parent, or skip if HEAD has none either.
+      # The guard's own regression cases, in a throwaway git repo: proves it
+      # still fails a DROP COLUMN with no contract line, passes one with it,
+      # and fails a modified/deleted/renamed migration - before trusting its
+      # verdict on this PR.
+      - name: Migration safety guard self-test
+        run: bash scripts/test-check-migration-safety.sh
+
       - name: Determine base commit for migration-safety
         id: migration-safety-base
         run: |
