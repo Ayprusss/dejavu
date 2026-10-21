@@ -171,9 +171,14 @@ rotation, PITR restore and destroy/re-apply runbooks).
 - **Database on Lambda:** discrete `DB_HOST`/`DB_NAME`/`DB_SECRET_ARN`
   instead of `DATABASE_URL`, TLS with the RDS CA bundle in `backend/certs/`,
   and the password fetched lazily from the RDS-managed secret
-  (`src/db/credentials.js`, 5-minute cache). RDS rotates it weekly; `pool.js`
-  calls `invalidate()` on `28P01`, so a rotation costs at most one failed
-  request per warm environment, never a redeploy.
+  (`src/db/credentials.js`, 5-minute cache). RDS rotates it weekly, and it
+  never costs a redeploy. On a `28P01`, `pool.js` calls `invalidate()` and
+  retries the *connection* once with a re-fetched password (`db.auth_retry`;
+  only acquisition is retried, never a query), so a stale cached password
+  costs one slower request, not a failed one. What can still fail is a
+  request that lands mid-rotation, when RDS already has the new password but
+  the secret doesn't yet: the re-fetch returns the old one, and the second
+  `28P01` reaches the caller.
 - **No secret in a Lambda environment variable or a `.tf` file.** Secrets
   live in SSM (`/dejavu/<env>/`, values set out of band) and the RDS-managed
   secret. `modules/secrets` sets `prevent_destroy`; tear dev down with a

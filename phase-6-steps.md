@@ -11,7 +11,8 @@ or a Terraform file.
 the Function URL, passes signature verification. Plus: the database has been
 restored from PITR once and the steps are written down.
 
-**This is the first phase that costs money** (~$22/month while dev is up; see
+**This is the first phase that costs money** (~$25–26/month at list price
+while dev is up, though $0 so far on this account's Free plan; see
 [Cost](#cost)). Everything up to step 6.5 is still $0.
 
 ---
@@ -106,9 +107,10 @@ apply.
    is ~$7.40/mo, not $3.50. → [Cost](#cost).
 
 7. **The $5 budgets fire immediately.** `modules/budget` has no cost filter,
-   so the dev *and* prod budgets both watch the whole account, and a ~$22/mo
-   run rate breaches both forecasts on day one. An alarm that always fires
-   gets ignored, the same way a flaky CI check does. → 6.5.
+   so the dev *and* prod budgets both watch the whole account, and dev's
+   ~$25–26/month at list price (though $0 so far on this account's Free
+   plan; see [Cost](#cost)) breaches both forecasts on day one. An alarm
+   that always fires gets ignored, the same way a flaky CI check does. → 6.5.
 
 8. **The rate limiters see one client.** Behind Function URL → Web Adapter →
    Express, the socket peer is `127.0.0.1` (the adapter). With

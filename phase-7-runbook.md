@@ -16,7 +16,8 @@ The merge came before the live stages, not after them. Stage 1b's ruleset
 (`ALARM_EMAIL` and `AWS_DEPLOY_ROLE_ARN_DEV` are both unset). What the push to
 `main` did touch: the api and migrator images for `61b9ee6` went to ECR;
 Terraform `apply-dev` planned 15 to add, 2 to change, 2 to destroy, but its
-`terraform apply` step was skipped, so dev is unchanged; `deploy.yml`'s
+`terraform apply` step was skipped, so dev is unchanged (the
+`setup-terraform` wrapper, fixed in PR #35; see stage 7); `deploy.yml`'s
 `deploy-dev` failed at credentials (no deploy role until stage 2).
 
 Tracking issues: #7 (7.0), #9 (7.2), #10 (7.3), #11 (7.4), #12 (7.5),
@@ -30,11 +31,11 @@ Tracking issues: #7 (7.0), #9 (7.2), #10 (7.3), #11 (7.4), #12 (7.5),
 | # | Stage | Why it's in this position |
 |---|---|---|
 | 0 | Phase 6 leftovers (7.0) | Cost numbers feed the prod decision |
-| 1 | GitHub secret `ALARM_EMAIL` | Every Terraform plan fails without it |
+| 1 | GitHub secret `ALARM_EMAIL` | Without it dev's plan fails `alarm_email` validation, so nothing can apply |
 | 1b | Ruleset on `main` requiring `ci` (issue #20) | Must be in place before stage 7's merge turns `main` into an auto-deploy trigger |
 | 2 | Bootstrap apply + 3 GitHub variables | The apply role can't create aliases or alarms, and the deploy roles don't exist, until this runs |
-| 3 | Push `phase-7-cd`, open the PR | CI on a real runner, plan comments for dev and prod |
-| 4 | Apply dev **from the branch** | Prove the alias, alarms and pipeline before merging, the way 6.7 did |
+| 3 | Push `phase-7-cd`, open the PR (**done**, PR #28) | CI on a real runner, plan comments for dev and prod |
+| 4 | Apply dev: dispatch from PR #35's branch, or merge #35 as the apply | Prove the alias, alarms and republish before stage 6 relies on them. Once #35 is on `main`, any `terraform/` merge applies dev |
 | 5 | Follow the new URL: Stripe, Vercel | The alias gives the API a new URL |
 | 6 | Verify alarms and the pipeline on dev | Metrics, filters and email routing are all still unproven |
 | 7 | Merge | First hands-off dev deploy. **Reject the prod approval** (prod doesn't exist yet) |
@@ -100,8 +101,44 @@ card `4242 4242 4242 4242` → success page → the order shows in admin.
 
 ## Stage 1 — `ALARM_EMAIL` secret
 
-`envs/dev` now requires `alarm_email` with no default, and `terraform.yml`
-passes it from this secret. Without it, the plan on the PR fails.
+`envs/dev` declares `alarm_email` with no default, and `terraform.yml`
+passes it from this secret as `TF_VAR_alarm_email`. **Without the secret,
+every dev plan fails** (the PR `plan (dev)` job and `apply-dev`'s plan step
+alike), with:
+
+```
+Error: Invalid value for variable
+
+  on main.tf line 100, in module "observability":
+ 100:   alarm_email   = var.alarm_email
+    ├────────────────
+    │ var.enable_alarms is true
+
+alarm_email must be a non-blank email address when enable_alarms is true. CI
+reads it from the ALARM_EMAIL repository secret (as TF_VAR_alarm_email), and
+an unset secret arrives as an empty string: set ALARM_EMAIL, or set
+enable_alarms = false.
+```
+
+That makes this stage the gate it was always meant to be. Before the
+validation was tightened, it wasn't one. GitHub expands an unset secret to
+an empty string, so the variable is *set*, to `""`. Terraform only complains about a variable
+that has no value at all, and `modules/observability`'s validation used to
+reject only `null` (`!var.enable_alarms || var.alarm_email != null`), so
+`""` got past both. PR #28 showed it: `plan (dev)` was green with
+`TF_VAR_alarm_email:` empty in the job's env, and its `15 to add` included
+`aws_sns_topic_subscription.alarms_email[0]`, endpoint hidden as sensitive.
+An apply from that plan would have asked SNS to subscribe an empty address
+and most likely failed partway through, with the republish step never
+running. The validation now also rejects `""` and whitespace
+(`try(trimspace(var.alarm_email), "") != ""`), so that failure moves from
+apply time to plan time, before anything changes. It still can't tell a real
+address from a typo. Only the SNS confirmation email in stage 6 proves that.
+
+A red `plan (dev)` doesn't block a merge (the ruleset requires only `ci`).
+Until this secret is set, expect the `Terraform` run on every `terraform/`
+PR, and on `main` after each such merge, to fail at the plan. Set it before
+stage 4:
 
 ```bash
 gh secret set ALARM_EMAIL --body "you@example.com"
@@ -190,7 +227,7 @@ gh pr merge --merge             # expect a refusal: required status check "ci" i
 gh pr merge --merge --admin     # expect a refusal too, since nobody can bypass
 
 gh pr close --delete-branch
-git switch phase-7-cd
+git switch main
 git branch -D chore/ruleset-canary
 ```
 
@@ -210,7 +247,7 @@ This creates `dejavu-gha-deploy-dev`, `dejavu-gha-deploy-prod` and
 metric filters, and raises prod's apply role to dev's level.
 
 ```bash
-git checkout phase-7-cd
+git switch main && git pull   # bootstrap's Phase 7 changes came in with PR #28
 cd terraform/bootstrap
 terraform init            # backend already migrated in Phase 5
 terraform plan            # expect: new roles/policies, in-place policy updates, 0 destroyed
@@ -251,6 +288,11 @@ Expected: the unqualified ARN is `explicitDeny` and the `:7` version is
 
 ## Stage 3 — Push and open the PR
 
+**Done (2026-09-23): PR #28, merged as `61b9ee6`. `phase-7-cd` has since
+been deleted,** so the commands below are a record of what ran, not
+something to re-run. The dev plan comment was `15 to add, 2 to change, 2 to
+destroy`, green without `ALARM_EMAIL` (see stage 1).
+
 ```bash
 git push -u origin phase-7-cd
 gh pr create --base main --head phase-7-cd \
@@ -261,7 +303,7 @@ gh pr create --base main --head phase-7-cd \
 What to check on the PR:
 
 - **`ci`** is green, including the new steps:
-  - `lint (backend)` runs shellcheck and the deploy-script harness (21 cases)
+  - `lint (backend)` runs shellcheck and the deploy-script harness (30 cases)
   - `migrations` runs the expand/contract guard
 - **Terraform plan comment for `dev`:**
   - adds `aws_lambda_alias.api_live`, the second permission, the SNS topic,
@@ -277,13 +319,53 @@ Expect this at least once, as in 6.7.
 
 ---
 
-## Stage 4 — Apply dev from the branch (issues #9, #14)
+## Stage 4 — Apply dev, on purpose (issues #9, #14)
 
-The same approach as 6.7: dispatch the apply from the branch, so the merge
-itself should be a no-op.
+> [!WARNING]
+> **Once PR #35 is merged, merging *any* change under `terraform/`, or to
+> `.github/workflows/terraform.yml`, really applies dev.** Until #35,
+> `apply-dev` planned and then silently skipped every apply (see stage 7's
+> record). #35 fixes that, and the `dev` environment has no protection rules,
+> so nothing stands between a merge and the apply. The trigger is
+> `terraform.yml`'s `push` filter:
+>
+> ```yaml
+>   push:
+>     branches: [main]
+>     paths:
+>       - 'terraform/**'
+>       - '.github/workflows/terraform.yml'
+> ```
+>
+> `terraform/**` matches every file under `terraform/`, not just `.tf`, so a
+> doc-only edit to `terraform/README.md` triggers it too. The first such run
+> lands the pending `15 to add, 2 to change, 2 to destroy`, including the
+> Function URL replacement, so do this stage deliberately, **not** as a side
+> effect of whichever `terraform/` PR happens to merge first.
+
+6.7 dispatched its apply from the branch, so that the merge would be a
+no-op. `phase-7-cd` can't be used for that: PR #28 merged before this stage
+ran, and the branch is gone. **Don't dispatch from `main` before #35 is
+merged, either.** `main`'s `terraform.yml` still has the wrapper bug, so the
+run would plan the changes, skip the apply and go green. Pick one of these:
+
+- **(a) Dispatch from #35's branch before merging #35.** `dev` has no branch
+  policy, so a dispatch from any ref can use it. After a successful apply,
+  #35's merge plans *No changes* and skips the apply, which is the 6.7
+  pattern. Use `--ref issue-12-deploy-yml-audit-tf-exitcode` in the dispatch
+  below. If `main` has moved, bring #35 up to date with it first, so the
+  Terraform you apply is the Terraform the merge lands.
+- **(b) Treat #35's merge as stage 4.** Merge it only after stages 1 and 2,
+  with `OLD_URL` recorded, and watch the `Terraform` run it triggers instead
+  of dispatching one.
+
+Either way, stages 1 and 2 come first. Without `ALARM_EMAIL` the plan fails
+validation (stage 1). Without `AWS_DEPLOY_ROLE_ARN_DEV`, the apply succeeds
+but the republish step fails at credentials (stage 2).
 
 **Before you start, record the current URL and the live image**. The URL is
-about to change:
+about to change, and `OLD_URL` is what the checks below and stage 5 compare
+against:
 
 ```bash
 OLD_URL=$(aws lambda get-function-url-config --function-name dejavu-dev-api --query FunctionUrl --output text)
@@ -291,12 +373,18 @@ aws lambda get-function --function-name dejavu-dev-api --query Code.ImageUri --o
 curl -s "${OLD_URL%/}/api/version"
 ```
 
-**Dispatch the apply:**
+**Run the apply.** For (a):
 
 ```bash
-gh workflow run terraform.yml --ref phase-7-cd -f environment=dev
+gh workflow run terraform.yml --ref issue-12-deploy-yml-audit-tf-exitcode -f environment=dev
 gh run watch "$(gh run list --workflow terraform.yml --limit 1 --json databaseId -q '.[0].databaseId')"
 ```
+
+For (b), merge #35 and `gh run watch` the `Terraform` run its push starts.
+Once #35 is on `main`, `--ref main` works too.
+
+Whichever way, check that the `terraform apply` step actually **ran**. The
+job going green isn't enough, because a skipped apply was green too.
 
 What the run does, in order:
 
@@ -530,7 +618,9 @@ What happens on merge:
 
 1. **`Terraform` / apply-dev:** should say *No changes* (stage 4 already
    applied), so no republish runs. If it isn't a no-op, find out why before
-   anything else ships (the same rule as 6.13).
+   anything else ships (the same rule as 6.13). Once PR #35 is on `main`, a
+   plan with changes here means a real apply, not a skipped one (stage 4's
+   warning).
 2. **`CI` on `main`:** `push-image` pushes the merge SHA.
 3. **`Deploy`**, triggered by CI's `workflow_run`. This is the first
    `deploy.yml` run of all (stage 6 ran the scripts locally):
@@ -564,10 +654,20 @@ stages 2 and 4–6, dispatch the command above with
 That is a re-run after a failure, not the fallback above. On the same
 merge, `Terraform` / apply-dev planned `15 to add, 2 to change, 2 to
 destroy` but **skipped** `terraform apply`, because the plan step's
-`exitcode` output didn't read `2`. The first suspect is `setup-terraform`'s
-wrapper (`terraform_wrapper: true`) masking `-detailed-exitcode`. Dev is
-still pre-alias. That isn't item 1's no-op, so find out why before stage 4
-relies on the same job.
+`exitcode` output didn't read `2`. Dev is still pre-alias. **Root cause,
+confirmed and fixed in PR #35:** `hashicorp/setup-terraform@v3` defaults to
+`terraform_wrapper: true`, which puts a Node script on `PATH` as
+`terraform`. At v3.1.2 (`wrapper/terraform.js`), the script runs the real
+binary with `ignoreReturnCode`, calls `setOutput('exitcode', 2)`, and then
+returns, so the process exits **0**. The step's own `code=$?` was therefore
+0, and it appended `exitcode=0` after the wrapper's value in
+`$GITHUB_OUTPUT`. The last value wins, so every `== '2'` gate (apply and
+all three republish steps) skipped, and nothing had failed. #35 sets
+`terraform_wrapper: false` on every setup-terraform step. It also makes
+both apply plans fail unless the exit code is 0 or 2 *and* agrees with
+`terraform show -json tfplan | jq .applyable`. Until #35 merges, `main`'s
+`apply-dev` still skips, so stage 4 has to go through #35 (see its
+warning).
 
 ---
 
